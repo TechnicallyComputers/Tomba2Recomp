@@ -25,16 +25,68 @@ The PlayStation CPU is a MIPS R3000A (LSI CW33300 core):
   Address size:     32-bit
 
 ----------------------------------------------------------------
-What to import
+What to import  —  READ THIS FIRST
 ----------------------------------------------------------------
-Import the HEADERLESS dump (the 2048-byte PS-EXE header is already
-stripped, so file offset 0 maps cleanly to the load address):
+There are two targets. For almost all work you want the SECOND one.
 
-  ghidra\SCUS_944.54_no_header.bin
+(A) The boot EXE, if you only need the loader.
 
-(Alternatively import the header-ful boot EXE tomba2\SCUS_944.54 and
- set the import "File Offset" to 0x800. The headerless dump is simpler
- and is what these notes assume.)
+    Import the header-ful boot EXE tomba2\SCUS_944.54 with import
+    "File Offset" = 0x800 (that skips the 2048-byte PS-EXE header so
+    file offset 0x800 maps to the load address 0x80010000).
+
+    NOTE: earlier revisions of this file told you to import
+    ghidra\SCUS_944.54_no_header.bin. That file was never produced and
+    does not exist. Use the File Offset route above instead.
+
+    LIMIT: this covers 0x80010000-0x80038800 and NOTHING ELSE. The boot
+    EXE is a ~165 KB loader; the bulk of the game is streamed from disc
+    as code overlays at runtime. Every [widescreen.cull] site this
+    project has needed so far lives OUTSIDE this range, so an EXE-only
+    import cannot see the code you are probably looking for.
+
+(B) The composited guest-RAM image  <-- normally the right choice.
+
+    ghidra\tomba2_ram.bin
+
+    A flat 2 MB image of guest RAM built from the runtime's overlay
+    capture set, so it contains the overlay code as it actually appeared
+    in RAM. Regenerate it with:
+
+      python psxrecomp-v4/tools/overlay_xref.py \
+          -d build-adaptive-uncull-probe/overlay_captures.json.d \
+          ramimage ghidra/tomba2_ram.bin \
+          --manifest ghidra/tomba2_ram_conflicts.txt
+
+    Import parameters:
+      language      = MIPS:LE:32:default
+      compiler      = default
+      base_address  = 0x80000000
+      (no file offset - offset 0 maps to 0x80000000)
+
+    Then let auto-analysis run. It finds ~1461 functions.
+
+    ** CAVEAT - the image is a COMPOSITE. ** Different overlays map
+    different code to the same virtual address. The builder elects the
+    variant seen executing in the most captures and logs every
+    disagreement to ghidra\tomba2_ram_conflicts.txt. Current coverage is
+    74.4% of the address space with 44,576 conflicting addresses (~11%
+    of covered words). Inside those regions the listing blends overlays
+    that never coexisted.
+
+    So: treat Ghidra output from this image as a LEAD, not a fact.
+    Before you act on any instruction, confirm it against the real
+    per-overlay variants:
+
+      python psxrecomp-v4/tools/overlay_xref.py -d <captures.json.d> word 0x80069B84
+      python psxrecomp-v4/tools/overlay_xref.py -d <captures.json.d> dis  0x80069B6C -n 40
+
+    Ghidra's decompiler will also invent addressing. It renders the
+    actor code's player access as a global DAT_800e7f5c when the real
+    instruction is `lw $v0,220($s0)` (player = <context>+0xDC); there is
+    exactly ONE true reference to 0x800E7F5C in the whole capture set.
+
+    Full rationale: psxrecomp-v4/docs/OVERLAY_XREF.md
 
 ----------------------------------------------------------------
 Load / memory layout (read from the PS-EXE header)
@@ -52,15 +104,38 @@ PS1 address space, for context:
   0xBFC00000             BIOS ROM reset vector
 
 The boot EXE is a small loader (~165 KB) that loads contiguously at
-0x80010000. The bulk of the game is streamed from disc as code
-overlays at runtime (same architecture as Tomba! 1) and is out of
-scope for the static EXE — those are discovered dynamically by the
-recompiler / captured by the overlay cache at runtime.
+0x80010000. The bulk of the game is streamed from disc as code overlays
+at runtime and is out of scope for the static EXE — those are discovered
+dynamically by the recompiler / captured by the overlay cache at runtime,
+and reachable statically only via target (B) above.
+
+Tomba! 2 is its own engine. Do not reason about it by analogy with
+Tomba! 1 — they are fundamentally different codebases, and findings do
+not transfer between them.
 
 ----------------------------------------------------------------
 Import via the shared Ghidra MCP server (port 4444)
 ----------------------------------------------------------------
-The workspace runs a single headless Ghidra MCP server (mcp__psx_ghidra__*,
-http://localhost:4444/sse). Use import_file with:
-  language = MIPS:LE:32:default, base_address = 0x80010000
-on ghidra/SCUS_944.54_no_header.bin, then run auto-analysis.
+The workspace runs a headless Ghidra MCP server (mcp__psx_ghidra__*,
+http://localhost:4444/sse). It is shared with the NES/GBA/GBC/Genesis
+projects, so:
+
+  - Check list_binaries first. The project may contain no PSX program
+    at all; a reconnect does not imply tomba2_ram.bin is loaded.
+  - Pass program_name="tomba2_ram.bin" on every call once imported,
+    or you will silently operate on another console's binary.
+
+Import:
+  import_file file_path=".../ghidra/tomba2_ram.bin"
+              language="MIPS:LE:32:default"
+              compiler="default"
+              base_address="0x80000000"
+              folder="/psx"
+
+The import_file call may report a timeout while still succeeding —
+re-check list_binaries before retrying, or you will import twice.
+Auto-analysis then runs in the BACKGROUND: get_function_statistics can
+report 1 function immediately after import and ~1461 a minute later.
+Xrefs are unavailable until it finishes; for call graphs use
+`overlay_xref.py callers <VA>` instead, which needs no analysis pass
+and reads the captured bytes directly.

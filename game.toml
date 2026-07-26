@@ -156,6 +156,80 @@ range_sites = [
 ]
 screen_x_sites = ["0x8003E228"]
 
+# Generic model/effect visibility predicate FUN_8002B278. The first compare is
+# its far-distance limit; the second is its forward-camera-cone reject. In a
+# revealed widescreen view, keep the model participating instead of guessing a
+# larger cone/range. Full instruction guards prevent same-VA overlay variants
+# from being changed. At 4:3 both comparisons retain their original result.
+[[widescreen.cull.keep]]
+address = "0x8002B310"
+expected = "0x28A21C01" # slti v0,a1,0x1c01
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x8002B368"
+expected = "0x0082202A" # slt a0,a0,v0 (nonzero rejects)
+result = 0
+
+# Generic engine model-list predicate FUN_8007712C. It selects distance/cone
+# thresholds by model type and renderer mode before marking object+1 visible
+# and adding the model to its bounded type queue. Disable only those far/cone
+# rejects in widened views; retain near-plane and queue-capacity checks.
+[[widescreen.cull.keep]]
+address = "0x80077248"
+expected = "0x28821401"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x800772D4"
+expected = "0x28620370"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x800772E4"
+expected = "0x28821C01"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x80077368"
+expected = "0x28620358"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x80077380"
+expected = "0x28821801"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x80077390"
+expected = "0x28821C01"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x80077414"
+expected = "0x28620358"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x80077424"
+expected = "0x28821001"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x800774A8"
+expected = "0x28620370"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x8007754C"
+expected = "0x28821A01"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x800775D0"
+expected = "0x28620368"
+result = 0
+
 # â”€â”€ Audit-specific config (consumed by psxrecomp/tools/*.py and tests) â”€â”€
 # Schema mirrors psxrecomp/bios/SCPH1001.toml. Paths are relative to the
 # project root.

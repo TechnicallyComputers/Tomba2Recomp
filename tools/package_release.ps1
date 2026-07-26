@@ -176,6 +176,74 @@ range_sites = [
 ]
 screen_x_sites = ["0x8003E228"]
 
+# Full-word-guarded object/model participation comparisons. True 4:3 retains
+# the original verdicts; wide gameplay bypasses far-distance and camera-cone
+# rejects while preserving near-plane and bounded-list safety checks.
+[[widescreen.cull.keep]]
+address = "0x8002B310"
+expected = "0x28A21C01"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x8002B368"
+expected = "0x0082202A"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x80077248"
+expected = "0x28821401"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x800772D4"
+expected = "0x28620370"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x800772E4"
+expected = "0x28821C01"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x80077368"
+expected = "0x28620358"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x80077380"
+expected = "0x28821801"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x80077390"
+expected = "0x28821C01"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x80077414"
+expected = "0x28620358"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x80077424"
+expected = "0x28821001"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x800774A8"
+expected = "0x28620370"
+result = 0
+
+[[widescreen.cull.keep]]
+address = "0x8007754C"
+expected = "0x28821A01"
+result = 1
+
+[[widescreen.cull.keep]]
+address = "0x800775D0"
+expected = "0x28620368"
+result = 0
+
 # ---- Controller ---------------------------------------------------------
 # Tomba! 2 is a d-pad platformer: real hardware boots a DualShock in DIGITAL
 # mode and the game expects it. Analog modes are not offered in this release

@@ -19,6 +19,13 @@ Scaffolded 2026-06-21. Boot EXE extracted, headerless Ghidra dump prepared,
 `game.toml` / `CMakeLists.txt` mirror the Ape Escape minimal template. First
 build/boot bring-up in progress.
 
+## Playing
+
+Release builds include the MIT-licensed OpenBIOS from PCSX-Redux. No external
+BIOS is required: select your legally obtained Tomba! 2 disc image in the
+launcher and press Launch. The optional BIOS row accepts the exact supported
+retail dump; clear it to return to bundled OpenBIOS.
+
 ## Layout
 
 - `tomba2/` — disc image (bin/cue), extracted boot EXE `SCUS_944.54`,
@@ -55,6 +62,12 @@ the initial window shape, and the live view is capped at Tomba 2's offered 21:9
 limit. BIOS, FMVs,
 menus, and other true-2D screens remain pillarboxed at their authored 4:3
 aspect.
+
+## License
+
+This repository contains no Tomba! 2 game assets or disc data. Release packages
+include OpenBIOS under the MIT notice in `bios/OpenBIOS.LICENSE`; they contain
+no retail PlayStation BIOS.
 
 ---
 

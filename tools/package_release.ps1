@@ -59,6 +59,16 @@ if (-not (Test-Path $DevExe)) { $DevExe = Join-Path $BuildPath "psx-runtime.exe"
 Copy-Item $DevExe (Join-Path $Stage "Tomba2Recomp.exe")
 Copy-Item (Join-Path $Root "README.md") $Stage
 Copy-Item (Join-Path $Root "LICENSE") $Stage
+$BundledBiosSrc = Join-Path $BuildPath "bios"
+if (!(Test-Path (Join-Path $BundledBiosSrc "openbios.bin")) -or
+    (Get-Item (Join-Path $BundledBiosSrc "openbios.bin")).Length -ne 524288 -or
+    !(Test-Path (Join-Path $BundledBiosSrc "OpenBIOS.LICENSE"))) {
+    throw "Runtime build did not stage OpenBIOS and its MIT notice"
+}
+$BundledBiosDst = Join-Path $Stage "bios"
+New-Item -ItemType Directory -Force $BundledBiosDst | Out-Null
+Copy-Item (Join-Path $BundledBiosSrc "openbios.bin") $BundledBiosDst
+Copy-Item (Join-Path $BundledBiosSrc "OpenBIOS.LICENSE") $BundledBiosDst
 if (Test-Path (Join-Path $Root "RELEASE_NOTES.md")) {
     Copy-Item (Join-Path $Root "RELEASE_NOTES.md") $Stage
 }
@@ -286,7 +296,8 @@ if ($bakedBios) {
 }
 Write-Host "Verified no baked absolute BIOS path in the exe"
 
-# No user-machine or copyrighted files may ride along in the stage.
+# No user-machine or copyrighted files may ride along in the stage. OpenBIOS
+# and its license are intentionally bundled; retail BIOS images remain banned.
 $strayPatterns = @("SCPH*.BIN","*.cue","*.iso","*.mcd","bios.cfg","disc.cfg",
                    "settings.toml","keybinds.ini","overlay_captures.json")
 $stray = foreach ($pat in $strayPatterns) { Get-ChildItem $Stage -Recurse -File -Filter $pat -ErrorAction SilentlyContinue }
@@ -297,7 +308,7 @@ $savesFiles = Get-ChildItem (Join-Path $Stage "saves") -Recurse -File -ErrorActi
 if ($savesFiles) {
     throw "Stage saves/ directory must be empty, contains: $(($savesFiles | ForEach-Object FullName) -join '; ')"
 }
-Write-Host "Verified stage carries no BIOS/disc/save/sidecar files"
+Write-Host "Verified bundled OpenBIOS; no retail BIOS/disc/save/sidecar files"
 
 @"
 ; PSXRecomp input mapping. PSX buttons are active when any listed source is pressed.
@@ -349,11 +360,9 @@ New in this release:
 - Multi-track disc support, clean first-run BIOS/disc picking, 21:9 ultrawide,
   frame interpolation, and memory card support carry forward.
 
-This package does not include the Tomba! 2 disc, the PlayStation BIOS, save
-data, or any game assets - you supply those from your own collection, and
-Tomba2Recomp asks for them one at a time (each dialog says which one it
-wants). The executable and the cache folder contain statically recompiled
-(machine-translated) builds of the game's code.
+This package includes the MIT-licensed OpenBIOS from PCSX-Redux and its notice
+in bios/OpenBIOS.LICENSE. It does not include the Tomba! 2 disc, a retail
+PlayStation BIOS, save data, or game assets.
 
 Known items in this release:
 - The software renderer remains available as a reference/fallback.

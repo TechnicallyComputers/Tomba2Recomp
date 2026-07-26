@@ -206,9 +206,14 @@ import importlib.util
 s = importlib.util.spec_from_file_location('co', r'$RecompTools\compile_overlays.py')
 m = importlib.util.module_from_spec(s); s.loader.exec_module(m)
 inc = r'$RecompInc'
-print('cg%d_%08x' % (m.codegen_ver(inc), m.codegen_hash(inc)))
+print('cg%d_%08x_gc%08x' % (
+    m.codegen_ver(inc),
+    m.codegen_hash(inc),
+    m.overlay_config_hash(
+        r'$(Join-Path $RecompDir "psxrecomp-game.exe")',
+        r'$(Join-Path $Stage "game.toml")')))
 "@ | Set-Content -Encoding ASCII $tagScript
-$CgTag = (& python $tagScript).Trim()
+$CgTag = (& py -3 $tagScript).Trim()
 Remove-Item -Force $tagScript
 Write-Host "Release codegen tag: $CgTag (only this cache namespace is shipped)"
 $CacheSrc = Join-Path $Root "$CacheBuildDir/cache/SCUS-94454"

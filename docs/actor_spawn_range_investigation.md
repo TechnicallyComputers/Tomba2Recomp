@@ -1,5 +1,15 @@
 # Adaptive widescreen - object/model participation
 
+> **Superseded 2026-07-26:** the thirteen `widescreen.cull.keep` records
+> described below are no longer enabled for Tomba 2. After rebasing onto
+> current master, a cache-off run with the records enabled reached the
+> black/softlock signature, while removing them completed repeated attract-demo
+> transitions. Cached DLLs compiled with the records were also semantically
+> stale because the cache tag did not include the game config. Treat the
+> earlier validation claims below as historical leads, not accepted evidence.
+> The guarded framework mechanism remains available for future sites that are
+> independently proven safe.
+
 Status as of **2026-07-25** on branch
 `feat/tomba2-adaptive-spawn-ranges`.
 

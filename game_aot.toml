@@ -135,11 +135,14 @@ auto_screen_x = true
 screen_w_imms = ["0x140"]
 screen_h_imms = ["0xF0"]
 guard_pixels = 16
+# FUN_80069B6C affects behavior reach. Retain only its ground-plane X/Z pairs;
+# removing them causes missing nearby starting-area composites, while the Y
+# pair remains vanilla.
 bias_sites = [
-    "0x80110A08",
+    "0x80069BA8", "0x80069BCC", "0x80110A08",
 ]
 range_sites = [
-    "0x80110A10",
+    "0x80069BB0", "0x80069BD8", "0x80110A10",
 ]
 screen_x_sites = ["0x8003E228"]
 

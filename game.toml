@@ -142,15 +142,18 @@ screen_h_imms = ["0xF0"]
 # hook below treats this separately from the visible field and reserves queue
 # headroom for candidates actually intersecting the wide frustum.
 guard_pixels = 16
-# Proven model participation window. Overlay code at the same address is
-# opcode-checked and left untouched when it differs. The old
-# 0x80069B84..0x80069BD8 records are deliberately absent: FUN_80069B6C is a
-# gameplay/teleport proximity trigger, not a render-participation cull.
+# Proven model participation windows. Overlay code at the same address is
+# opcode-checked and left untouched when it differs. FUN_80069B6C is a
+# behavior/teleport proximity trigger, not a pure render cull; retain only its
+# ground-plane X/Z pairs. Removing all three pairs caused missing nearby
+# composite scenery and terrain in the starting-area demo. Its Y pair
+# (0x80069B84/0x80069B8C) stays vanilla so vertical behavior reach is not
+# extended.
 bias_sites = [
-    "0x80110A08",
+    "0x80069BA8", "0x80069BCC", "0x80110A08",
 ]
 range_sites = [
-    "0x80110A10",
+    "0x80069BB0", "0x80069BD8", "0x80110A10",
 ]
 screen_x_sites = ["0x8003E228"]
 

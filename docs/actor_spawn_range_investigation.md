@@ -137,8 +137,11 @@ helper.
 
 ## Safety exclusions
 
-- `80069B84`–`80069BD8` are absent. `FUN_80069B6C` is a behavior/teleport
-  proximity trigger, not a pure visibility test.
+- `FUN_80069B6C` is a behavior/teleport proximity trigger, not a pure
+  visibility test. Its ground-plane X/Z pairs (`80069BA8`/`80069BB0` and
+  `80069BCC`/`80069BD8`) remain aspect-widened because removing them provably
+  drops nearby composite scenery and terrain in the starting-area demo. Its
+  vertical Y pair (`80069B84`/`80069B8C`) remains vanilla.
 - The old far-distance sites (`8002B310`, `80077248`, `800772E4`,
   `80077380`, `80077390`, `80077424`, and `8007754C`) are not forced.
 - Combat/attack angle windows in `FUN_8001FAE0` and overlay variants are not
@@ -156,7 +159,7 @@ Compiler/runtime validation:
 - game regeneration: 2,726 functions, six shards;
 - overlay ABI: 21;
 - codegen hash: `4cc1a66b`;
-- game-codegen config hash: `f8403a93`;
+- corrected game-codegen config hash: `b7860373`;
 - bundled OpenBIOS regenerated after the final emitter change;
 - fresh-cache GCC autocompile completed 18 observed runs with zero process
   failures, zero failed shards, and a final one-built/28-safely-skipped shard
@@ -175,7 +178,8 @@ Execution-path validation:
 - model-queue high-water marks were 16/25/6 against capacities 24/40/28, with
   zero aggregate queue rejects.
 
-Sustained 21:9 hybrid/native soak:
+Historical 21:9 hybrid/native soak on the superseded `f8403a93`
+configuration:
 
 - 119 samples covered 595.859 seconds and frames 39,458 through 74,683;
 - the guest frame counter advanced in every sample interval;
@@ -184,9 +188,27 @@ Sustained 21:9 hybrid/native soak:
 - candidate, range-index, lazy-manifest, and aspect-queue overflow counters
   remained zero;
 - the three reported stale blocks were live overlay CRC transitions; every
-  loaded library used the current `cg9_4cc1a66b_gcf8403a93` cache identity;
+  loaded library used the then-current `cg9_4cc1a66b_gcf8403a93` cache
+  identity;
 - the process remained responsive after the monitor exited, and the final
   host-window capture was 1280x548.
+
+That soak establishes runtime stability but not visual correctness: its
+screenshot schedule missed the later pond/house camera described in the
+post-validation regression audit below.
+
+Corrected X/Z-only `b7860373` 21:9 hybrid/native soak:
+
+- 119 samples covered 597.579 seconds and frames 2,144 through 37,969;
+- the guest frame counter advanced in every sample interval;
+- median guest rate was 60.012 Hz;
+- native dispatch increased by 8,577,609 during the sampled intervals;
+- stale-block, candidate-overflow, range-index-overflow, lazy-manifest-
+  overflow, and aspect-queue-reject counters remained zero;
+- autocompile reached eight observed runs with zero process failures and zero
+  failed shards; the latest result built 14 and safely skipped 17;
+- queue high-water marks remained 16/25/6 against capacities 24/40/28;
+- the process remained responsive at 60 FPS after the monitor exited.
 
 True 4:3 identity:
 
@@ -216,6 +238,20 @@ Visual evidence in the local validation build:
 - `build-t2/soak_21x9_final/final_host_window.bmp`: actual presented window
   after the sustained hybrid/native soak;
 - window-capture motion checks remained live on every gameplay pair.
+
+Post-validation regression audit:
+
+- the initial screenshot set did not cover the later pond/house camera and was
+  incorrectly treated as route-complete validation;
+- removing every `FUN_80069B6C` pair reproduced a hard missing-terrain seam
+  and absent nearby participants in that camera;
+- restoring all three master pairs recovered the scene;
+- a second generated-build A/B showed that the X/Z pairs alone recover the
+  continuous terrain and nearby signs, ice blocks, pigs, cranes, barrels, and
+  building pieces, so the Y pair remains excluded;
+- evidence is in `build-t2/regression_live.bmp`,
+  `build-t2/diagnostic_restore_check.bmp`, and
+  `build-t2/diag_xz_target/cap_00.bmp` through `cap_19.bmp`.
 
 The first clean-cache boot made before OpenBIOS regeneration correctly failed
 validation: the build had warned of an emitter fingerprint mismatch and the

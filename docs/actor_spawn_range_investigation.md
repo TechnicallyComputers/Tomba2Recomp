@@ -1,172 +1,234 @@
-# Adaptive widescreen - object/model participation
+# Tomba! 2 aspect-aware world participation
 
-> **Superseded 2026-07-26:** the thirteen `widescreen.cull.keep` records
-> described below are no longer enabled for Tomba 2. After rebasing onto
-> current master, a cache-off run with the records enabled reached the
-> black/softlock signature, while removing them completed repeated attract-demo
-> transitions. Cached DLLs compiled with the records were also semantically
-> stale because the cache tag did not include the game config. Treat the
-> earlier validation claims below as historical leads, not accepted evidence.
-> The guarded framework mechanism remains available for future sites that are
-> independently proven safe.
+Status: validated implementation in progress on
+`feat/tomba2-aspect-participation` (2026-07-26).
 
-Status as of **2026-07-25** on branch
-`feat/tomba2-adaptive-spawn-ranges`.
+This document replaces the superseded experiment that forced thirteen
+distance/cone comparisons. That experiment conflated several systems, changed
+gameplay reach, admitted candidates without queue policy, and could reproduce
+the black-screen/softlock signature. None of those thirteen
+`widescreen.cull.keep` records is enabled.
 
-The beach-road pop-in is fixed in 16:9, 21:9, and adaptive widescreen. The fix
-does not widen the renderer or terrain margin. It bypasses two proven
-object/model distance-and-camera-cone predicates while a widened world view is
-configured. True 4:3 evaluates the original comparisons.
+## Desired behavior
 
-## Reproduction and result
+At 16:9, 21:9, and during adaptive resizing, terrain and resident objects that
+intersect the newly revealed horizontal field should participate before they
+enter the old 4:3 field. Composite models must remain whole at the wide edges.
+True 4:3 must execute the original comparisons exactly.
 
-The reliable reproduction is the Whoopee Camp beach attract demo:
+The implementation is deliberately not “infinite spawning.” It does not load
+other rooms, expand actor pools, remove distance/near-plane checks, or activate
+AI and combat outside their authored ranges.
 
-- At the starting wide camera, the Evil Pig pedestal is visible on the right.
-- In the original build the pig is absent, then appears only after Tomba moves
-  toward it.
-- With the guarded participation sites, the pig is already on the pedestal at
-  the initial camera.
-- Distant fence and uphill model groups are also submitted before reaching the
-  old 4:3 boundary.
-- Terrain remains complete. This avoids the terrain-removal regression caused
-  by the discarded `ws_margin = 600` global diagnostic.
+## Fresh investigation
 
-Captured validation images are under `build-spawn-dbg/`:
+The investigation used the additive overlay-capture history plus the headless
+Ghidra MCP program `psx/Tomba2`. Overlay addresses were accepted only when the
+complete captured instruction matched; the composite RAM image was not treated
+as proof for mutually exclusive overlay bodies.
 
-| mode | image | observed |
-|---|---|---|
-| 21:9 adaptive | `maximal_seq_1500ms.png` | pig/model groups present at initial camera; terrain intact |
-| 21:9 adaptive | `maximal_seq_4000ms.png` | uphill structures participate before the old edge |
-| 16:9 fixed | `maximal_16x9_1500ms.png` | pig is present at the revealed right edge |
-| 16:9 fixed | `maximal_16x9_2500ms.png` | pig clearly present; terrain intact |
-| true 4:3 | `beach_control_true4x3_2500ms.png` | runtime reports `x_margin = 0`; vanilla comparisons execute |
+The visible symptom separates into three relevant paths:
 
-The real memory-card save currently loads into the lava area. A manual lava
-pass remains useful because the attract demo ignores debug-pad injection; do
-not mutate live guest code to force navigation.
+1. terrain-cell frustum selection;
+2. engine model-list participation;
+3. a lower-level per-model/per-child visibility bit.
 
-## Predicate 1: per-object visibility
+Actor behavior, hit cones, room loading, and fixed queue capacity are separate
+systems and remain unchanged.
 
-`FUN_8002B278` takes one object, computes its position relative to the camera
-scratch state at `1F8000D2/D6/DA`, then performs:
+### Terrain-cell selection
+
+Six captured overlay constants are 12-bit angular half-extents used by the
+terrain producers:
+
+| address | expected instruction |
+|---|---:|
+| `8010E9A0` | `240301C7` |
+| `8012EEB8` | `2403012C` |
+| `8013F138` | `24020155` |
+| `8013F190` | `240301C7` |
+| `8013F224` | `2402013E` |
+| `8013F244` | `240201C7` |
+
+The runtime widens `tan(angle)` by the current horizontal reveal factor. It
+does not add pixels to angle units. The complete instruction word guards every
+site, so an unrelated overlay body at the same virtual address is untouched.
+
+Measured values:
+
+| client aspect | per-side extent (including 16px guard) | max vanilla | max widened |
+|---|---:|---:|---:|
+| 4:3 | 0 | 455 | 455 |
+| 16:9 | 69 | 455 | 571 |
+| 21:9 | 136 | 455 | 651 |
+
+### Engine model-list participation
+
+`FUN_8007712C` clears `model+1`, evaluates distance and a camera cone, marks an
+accepted model visible, and inserts types 2/9, 4, and 5 into fixed scratch
+queues. Their capacities are 24, 40, and 28 entries.
+
+Only the six signed cosine-reject instructions are aspect-aware:
+
+| address | expected instruction |
+|---|---:|
+| `800772D4` | `28620370` |
+| `80077368` | `28620358` |
+| `80077414` | `28620358` |
+| `800774A8` | `28620370` |
+| `8007753C` | `28620350` |
+| `800775D0` | `28620368` |
+
+Every vanilla acceptance is preserved. A vanilla rejection is reconsidered
+with the horizontal cone scaled to the live aspect; the vertical cone and
+distance checks stay vanilla.
+
+The visible field has priority over the guard/hysteresis region. Guard and
+hysteresis candidates are rejected when a relevant queue reaches
+`capacity - 4`, reserving four slots for later visible candidates. The game’s
+own capacity checks remain intact.
+
+### Composite-child participation
+
+The user’s new reproduction—an old man losing his body while his arms remain,
+and a foreground barrel losing only some pieces—identified a lower-level
+per-child gate.
+
+Headless Ghidra shows `FUN_8002B278` computing:
 
 ```c
-distance = sqrt(dx*dx + dy*dy + dz*dz);
-if (distance < 0x200) return false;
-if (distance >= 0x1C01) return false;
-if (dot(camera_forward, delta) < distance * 0xD60) return false;
+delta = object_position - camera_position;
+distance = sqrt(delta.x² + delta.y² + delta.z²);
+if (distance < 0x200)  reject;
+if (distance >= 0x1C01) reject;
+if (dot(camera_forward, delta) < distance * 0xD60) reject;
 object[1] = 1;
-return true;
 ```
 
-It has thirteen captured callers spanning model/effect submission wrappers:
-`8002C3EC`, `8002918C`, `80032918`, `80030990`, `800293F4`, `800275D4`,
-`800292B8`, `8002B8F4`, `8002F230`, `80029530`, `8002BAFC`, `8002C548`, and
-`80030A3C`.
+The exact cone instruction is:
 
-The guarded sites are:
+| address | expected instruction | threshold |
+|---|---:|---:|
+| `8002B368` | `0082202A` (`slt a0,a0,v0`) | `0x358` Q10 |
 
-| address | expected word | wide result | meaning |
-|---|---:|---:|---|
-| `8002B310` | `28A21C01` | 1 | keep the far-distance test passing |
-| `8002B368` | `0082202A` | 0 | suppress the forward-cone reject |
+This site uses object register `s4` and camera-relative X/Z/Y registers
+`s3/s2/s1`. It does not append to the three fixed model queues, so its
+per-site `queue_guard` is false. Its near and far distance checks are not
+changed.
 
-Across the overlay capture set, 218 bodies contain the distance site and all
-have the exact expected word. The cone site occurs in the same function body.
+This is the missing half-cull fix: individual children that vanilla accepts
+remain accepted, while children in the aspect-derived horizontal fringe are
+kept with the same vertical and distance envelope as 4:3.
 
-## Predicate 2: engine model-list builder
+## Runtime policy
 
-`FUN_8007712C` is the broader engine predicate. It receives an object and a
-camera-relative vector, clears `object[1]`, chooses distance/cone limits by
-model type and renderer mode, then:
+- visible envelope: current client aspect, excluding the 16px guard;
+- activation guard: 16px outside the visible horizontal edge;
+- deactivation hysteresis: another 24px outside the guard;
+- true 4:3: zero margin and the original comparison result;
+- native generated, GCC overlay, and dirty-interpreter paths call the same
+  helper;
+- relevant aspect policy and every exact site contribute to overlay cache
+  identity.
 
-- sets `object[1] = 1`;
-- returns visible;
-- queues types 2/9, 4, and 5 into bounded scratch lists.
+Changing window dimensions updates the envelope immediately. No recompilation
+or cache rebuild is needed because the generated code calls a live runtime
+helper.
 
-The nine direct wrappers at `8007778C`, `80077958`, `80077F3C`, `80077A4C`,
-`800777FC`, `80077870`, `800779D0`, `80077ACC`, and `800778E4` make it a
-general model-participation path.
+## Safety exclusions
 
-The fix bypasses only far-distance and forward-cone rejects. It deliberately
-keeps:
+- `80069B84`–`80069BD8` are absent. `FUN_80069B6C` is a behavior/teleport
+  proximity trigger, not a pure visibility test.
+- The old far-distance sites (`8002B310`, `80077248`, `800772E4`,
+  `80077380`, `80077390`, `80077424`, and `8007754C`) are not forced.
+- Combat/attack angle windows in `FUN_8001FAE0` and overlay variants are not
+  changed.
+- Queue-capacity branches are not removed.
+- Actor pools and unloaded rooms are not expanded.
+- No address-only global comparison rewrite is used.
 
-- near-plane limits (`0x200`, `0x300`, `0x400`);
-- type dispatch;
-- bounded queue capacities (24, 28, and 40 entries).
+## Validation evidence
 
-Removing the queue-capacity checks would write past fixed scratch storage and
-is not a valid "maximal objects" implementation.
+Compiler/runtime validation:
 
-| address | expected word | wide result | role |
-|---|---:|---:|---|
-| `80077248` | `28821401` | 1 | far limit |
-| `800772D4` | `28620370` | 0 | cone reject |
-| `800772E4` | `28821C01` | 1 | far limit |
-| `80077368` | `28620358` | 0 | cone reject |
-| `80077380` | `28821801` | 1 | far limit |
-| `80077390` | `28821C01` | 1 | far limit |
-| `80077414` | `28620358` | 0 | cone reject |
-| `80077424` | `28821001` | 1 | far limit |
-| `800774A8` | `28620370` | 0 | cone reject |
-| `8007754C` | `28821A01` | 1 | far limit |
-| `800775D0` | `28620368` | 0 | cone reject |
+- guarded recompiler parser and code-generation suite: all tests pass;
+- aspect-cone math suite: all tests pass;
+- game regeneration: 2,726 functions, six shards;
+- overlay ABI: 21;
+- codegen hash: `4cc1a66b`;
+- game-codegen config hash: `f8403a93`;
+- bundled OpenBIOS regenerated after the final emitter change;
+- fresh-cache GCC autocompile completed 18 observed runs with zero process
+  failures, zero failed shards, and a final one-built/28-safely-skipped shard
+  result.
 
-Every site is one distinct word across all 235 captured copies of this overlay
-body. Most were executed in 218 capture sets; the less common type/mode arms
-were executed in 14 or 32 sets. `overlay_xref.py word` is the authority because
-the Ghidra RAM image is a composite of mutually exclusive overlays.
+Execution-path validation:
 
-## Framework mechanism
+- hybrid/native cache loaded the new identity and executed native overlays;
+- interpreter control (`overlay_native_off`) produced zero native dispatches
+  during the sample and 107,523 interpreted dispatches;
+- in that interpreter sample, exact site `8002B368` ran 4,033 times and made
+  122 additional wide-visible keeps;
+- in the 21:9 starting-area pass, exact site `8002B368` ran 17,015 times,
+  with 5,556 additional visible keeps, 34 guard keeps, six hysteresis keeps,
+  and zero queue rejects;
+- model-queue high-water marks were 16/25/6 against capacities 24/40/28, with
+  zero aggregate queue rejects.
 
-The framework now accepts:
+Sustained 21:9 hybrid/native soak:
 
-```toml
-[[widescreen.cull.keep]]
-address = "0x8002B310"
-expected = "0x28A21C01"
-result = 1
-```
+- 119 samples covered 595.859 seconds and frames 39,458 through 74,683;
+- the guest frame counter advanced in every sample interval;
+- median guest rate was 59.866 Hz and native dispatches increased by
+  14,053,359 during the sampled intervals;
+- candidate, range-index, lazy-manifest, and aspect-queue overflow counters
+  remained zero;
+- the three reported stale blocks were live overlay CRC transitions; every
+  loaded library used the current `cg9_4cc1a66b_gcf8403a93` cache identity;
+- the process remained responsive after the monitor exited, and the final
+  host-window capture was 1280x548.
 
-Properties:
+True 4:3 identity:
 
-- supports `SLT`, `SLTU`, `SLTI`, and `SLTIU`;
-- identifies a site by physical address plus the complete 32-bit instruction;
-- leaves a nonmatching same-VA overlay variant unchanged;
-- returns the vanilla comparison result at true 4:3;
-- forces the configured 0/1 verdict only when `psx_ws_x_margin() > 0`;
-- works in both native generated code and the dirty-RAM interpreter.
+- live resize selected mode 0 and `x_margin = 0`;
+- during a five-second gameplay sample, all 111 calls to `8002B368`
+  incremented only its `identity_43` counter;
+- visible, guard, hysteresis, outside-reject, and queue-reject counters did not
+  change.
 
-All thirteen Tomba sites are present in `game.toml`, `game_aot.toml`, and
-`game_autocompile.toml`.
+Dynamic sizing:
 
-## Validation performed
+- 4:3 -> mode 0, margin 0;
+- 16:9 -> native-wide mode 2, margin 69;
+- 21:9 -> native-wide mode 2, margin 136;
+- every transition occurred in the same running process.
 
-- `recompiler_patch_test.exe`: parser, invalid-opcode rejection, native true and
-  false emission, and same-VA overlay mismatch all pass.
-- `psxrecomp-game.exe --config game.toml`: 2726 functions regenerated.
-- `build-spawn-dbg/Tomba2Recomp.exe`: runtime rebuilt successfully.
-- Native overlay preflights for regions `80022000` / `80073000`, forced
-  interiors `8002B278` / `8007712C`: both DLL shards built successfully
-  against overlay ABI v19 / codegen v9 (hash `3213685b`).
-- 21:9 adaptive beach sequence: pig and distant models present; terrain intact;
-  attract demo returns normally.
-- 16:9 fixed beach sequence: pig present at revealed edge; terrain intact.
-- true 4:3 control: `x_margin = 0`; helper returns the original comparisons.
+Visual evidence in the local validation build:
 
-## Related findings that must not be conflated
+- `build-t2/wincap_exact_user_route/cap_12.bmp`: old man is a complete model
+  at the doorway;
+- `build-t2/wincap_exact_user_route/cap_18.bmp`: foreground barrels remain
+  complete through the wide view;
+- `build-t2/next_demo_check.bmp`: starting-area Evil Pig and distant objects
+  participate in the initial 21:9 view;
+- `build-t2/wincap_half_cull/cap_00.bmp` and `cap_15.bmp`: lava/mine terrain
+  and models remain complete across the 21:9 frame;
+- `build-t2/soak_21x9_final/final_host_window.bmp`: actual presented window
+  after the sustained hybrid/native soak;
+- window-capture motion checks remained live on every gameplay pair.
 
-`80069B6C` is a symmetric 3-axis proximity window used by behavior state
-machines. Existing `bias_sites`/`range_sites` around this function therefore
-affect behavior reach, not only draw culling. Do not add more sites of that
-shape without reading their callers.
+The first clean-cache boot made before OpenBIOS regeneration correctly failed
+validation: the build had warned of an emitter fingerprint mismatch and the
+starvation dump stayed in OpenBIOS exception/SIO code (`BFC21xxx`) without
+reaching the Tomba visibility sites. After canonical OpenBIOS regeneration,
+the same empty-cache boot remained healthy and autocompiled successfully.
 
-Centered 12-bit angle windows in `FUN_8001FAE0` and overlay variants around
-`8010E2FC` are combat/hit cones. Widening them changes gameplay and is unrelated
-to model participation.
+## Remaining scope
 
-The actor structure offsets recovered during the earlier investigation remain
-useful for later AI/lifecycle work, but the Evil Pig visual repro did not
-require a write trace of `+0x00`, `+0x06`, or `+0x145`: both actual rejection
-paths write the model-visible byte at `+0x01`.
+This solution covers candidates already resident in the loaded area. It does
+not deliberately create actors from unloaded rooms or run distant AI early.
+If a future scene proves that a visible enemy is not resident at all, that
+scene needs separate allocation/lifecycle attribution before any pool change.
+Literal maximal participation is intentionally not implemented: it is
+unnecessary for the current reproductions and would require producer,
+consumer, storage, and overflow analysis for each fixed pool.

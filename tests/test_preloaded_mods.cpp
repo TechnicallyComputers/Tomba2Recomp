@@ -47,7 +47,7 @@ int main(int argc, char** argv) {
             return fail("manifest parse failed: " + error);
         }
     }
-    if (manifest_count != 2) return fail("expected two package manifests");
+    if (manifest_count != 3) return fail("expected three package manifests");
 
     PSXRecompV4::mod_clear_plugins_for_tests();
     for (const char* id : {
@@ -60,7 +60,8 @@ int main(int argc, char** argv) {
              "tomba2.framerate.120",
              "tomba2.framerate.144",
              "tomba2.framerate.165",
-             "tomba2.framerate.240"}) {
+             "tomba2.framerate.240",
+             "tomba2.fmv.skip"}) {
         if (!PSXRecompV4::mod_register_activation_plugin(id, no_op_plugin)) {
             return fail(std::string("could not register test plugin ") + id);
         }
@@ -72,8 +73,8 @@ int main(int argc, char** argv) {
     if (!manager.load_state(&error)) {
         return fail("default state failed: " + error);
     }
-    if (manager.packages().size() != 2) {
-        return fail("expected two package families");
+    if (manager.packages().size() != 3) {
+        return fail("expected three package families");
     }
 
     const auto default_plan = manager.resolve(kGameId, "", kDiscSha256);
@@ -131,9 +132,24 @@ int main(int argc, char** argv) {
         }
     }
 
+    if (!manager.set_feature_enabled(
+            "tomba2.experimental.interpolated-frame-rate",
+            "interpolated-frame-rate", false, &error) ||
+        !manager.set_feature_enabled(
+            "tomba2.enhancement.skip-fmvs", "skip-fmvs", true, &error)) {
+        return fail(error);
+    }
+    const auto skip_plan = manager.resolve(kGameId, "", kDiscSha256);
+    if (!skip_plan.ok || !skip_plan.writes.empty() ||
+        skip_plan.plugins.size() != 1 ||
+        skip_plan.plugins.front().id != "tomba2.fmv.skip") {
+        return fail("Skip FMVs did not resolve its trusted activation plugin");
+    }
+
     fs::remove_all(root, ec);
-    std::cout << "Tomba 2 preloaded mods: 2 packages, "
+    std::cout << "Tomba 2 preloaded mods: 3 packages, "
                  "3 widescreen choices, 7 interpolated frame-rate choices, "
-                 "motion-adaptive clarity blend, stock guest code untouched\n";
+                 "motion-adaptive clarity blend, game-owned FMV skipping, "
+                 "stock guest code untouched\n";
     return 0;
 }

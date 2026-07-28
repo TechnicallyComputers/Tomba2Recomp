@@ -94,8 +94,8 @@ if (-not (Test-Path (Join-Path $ModsSrc "packages"))) {
 }
 Copy-Item -Recurse -Force $ModsSrc (Join-Path $Stage "mods")
 $modManifestCount = (Get-ChildItem (Join-Path $Stage "mods/packages") -Recurse -Filter manifest.toml).Count
-if ($modManifestCount -ne 2) {
-    throw "Expected two Tomba 2 preloaded mod manifests, found $modManifestCount"
+if ($modManifestCount -ne 3) {
+    throw "Expected three Tomba 2 preloaded mod manifests, found $modManifestCount"
 }
 Write-Host "Bundled Tomba 2 mod catalog: $modManifestCount package(s)"
 
@@ -155,10 +155,12 @@ frame_interpolation = false
 frame_interpolation_fps = 0
 offer_frame_interpolation = false
 aspect_ratio      = "4:3"
-# FMV auto-skip stays off for the faithful presentation; the launcher's FMV
-# toggle enables it. These two settings make that toggle also cover the
-# silent RAM-preloaded Whoopee Camp logo (it streams no XA audio, so the
-# default movie detector alone would miss it).
+# FMV auto-skip stays off for the faithful presentation; the Skip FMVs mod
+# enables it. These settings make the mod also cover the silent RAM-preloaded
+# Whoopee Camp logo (it streams no XA audio, so the default movie detector
+# alone would miss it). Hide the legacy Display toggle.
+auto_skip_fmv       = false
+offer_skip_fmv      = false
 fmv_skip_no_xa      = true
 fmv_skip_no_xa_hold = 600
 

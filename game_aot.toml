@@ -112,9 +112,11 @@ aspect_ratio = "4:3"
 # START-skippable ones. The Whoopee Camp logo is a SILENT RAM-preloaded movie
 # (no CD sectors, no XA during playback): fmv_skip_no_xa broadens detection to
 # MDEC activity alone so it fast-forwards too (presentation-side only).
-# The longer silent-MDEC hold also covers the logo's post-decode wait while
-# auto-skip is enabled. Disable auto_skip_fmv for release-faithful behavior.
-auto_skip_fmv     = true
+# The longer silent-MDEC hold also covers the logo's post-decode wait. Tomba 2
+# owns activation through its Skip FMVs mod; hide the legacy Display toggle and
+# keep the faithful baseline until that mod activates.
+auto_skip_fmv     = false
+offer_skip_fmv    = false
 fmv_skip_no_xa    = true
 fmv_skip_no_xa_hold = 600
 

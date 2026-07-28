@@ -26,9 +26,10 @@ BIOS is required: select your legally obtained Tomba! 2 disc image in the
 launcher and press Launch. The optional BIOS row accepts the exact supported
 retail dump; clear it to return to bundled OpenBIOS.
 
-Tomba 2's widescreen and temporal-frame-blending experiments live on the
-launcher's **Mods** page. They are disabled by default, leaving the authentic
-4:3/non-interpolated presentation as the baseline.
+Tomba 2's widescreen, temporal-frame-blending, and Skip FMVs enhancements live
+on the launcher's **Mods** page. They are disabled by default, leaving the
+authentic 4:3/non-interpolated presentation with real-time movies as the
+baseline.
 
 ## Layout
 
@@ -60,7 +61,7 @@ prints the selected backend and never silently changes it.
 The boot EXE is a small loader; the bulk of the game streams from disc as code
 overlays at runtime (same architecture as Tomba! 1).
 
-## Built-in display mods
+## Built-in mods
 
 Enable **Tomba 2 Widescreen** on the Mods page and select 16:9, 21:9, or
 Adaptive. Adaptive follows the live window or fullscreen aspect from 4:3 up to
@@ -73,6 +74,10 @@ or the measured display refresh while guest simulation, input, timers, and
 audio keep their original cadence. It uses Ape Escape's motion-adaptive clarity
 blend to suppress crossfades on large pixel changes, reducing double-image
 trails. This is temporal blending, not motion-vector frame generation.
+
+**Skip FMVs** mutes and rapidly advances streamed XA/MDEC movies plus the
+silent, RAM-preloaded Whoopee Camp logo. The game still runs its normal movie
+completion and teardown path.
 
 ## License
 

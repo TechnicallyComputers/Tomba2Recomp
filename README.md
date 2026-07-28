@@ -49,6 +49,10 @@ cmake -S . -B build-master -G Ninja -DCMAKE_BUILD_TYPE=Release \
 cmake --build build-master --target psx-runtime -j 16
 ```
 
+SDL3 is the default host backend. To build the explicit SDL2 compatibility
+fallback, add `-DPSX_SDL_BACKEND=SDL2` to the configure command above. CMake
+prints the selected backend and never silently changes it.
+
 The boot EXE is a small loader; the bulk of the game streams from disc as code
 overlays at runtime (same architecture as Tomba! 1).
 

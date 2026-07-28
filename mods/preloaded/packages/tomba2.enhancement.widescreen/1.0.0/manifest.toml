@@ -1,0 +1,55 @@
+format_version = 5
+id = "tomba2.enhancement.widescreen"
+version = "1.0.0"
+name = "Tomba 2 Widescreen"
+author = "mstan"
+description = "Renders Tomba 2 gameplay with a wider field of view using its game-specific projection, culling, backdrop, and object-participation hooks."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94454"
+disc_sha256 = "8e9568388155787384c3166a5934a495fbff3fa57154ab0489b0f214fe05a8ab"
+
+[[feature]]
+id = "widescreen"
+name = "Widescreen (Experimental)"
+description = "Enable Tomba 2's native-wide gameplay rendering and choose a fixed or resize-driven aspect."
+group = "Display"
+default_enabled = false
+
+[[option]]
+feature = "widescreen"
+id = "aspect"
+label = "Aspect ratio"
+description = "Adaptive follows the live window size from 4:3 through 21:9."
+group = "Display"
+type = "choice"
+default = "16:9"
+
+[[option.choice]]
+value = "16:9"
+label = "16:9"
+
+[[option.choice]]
+value = "21:9"
+label = "21:9"
+
+[[option.choice]]
+value = "adaptive"
+label = "Adaptive"
+
+[[plugin]]
+feature = "widescreen"
+id = "tomba2.widescreen.16-9"
+when = { aspect = "16:9" }
+
+[[plugin]]
+feature = "widescreen"
+id = "tomba2.widescreen.21-9"
+when = { aspect = "21:9" }
+
+[[plugin]]
+feature = "widescreen"
+id = "tomba2.widescreen.adaptive"
+when = { aspect = "adaptive" }

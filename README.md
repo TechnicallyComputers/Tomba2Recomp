@@ -26,6 +26,10 @@ BIOS is required: select your legally obtained Tomba! 2 disc image in the
 launcher and press Launch. The optional BIOS row accepts the exact supported
 retail dump; clear it to return to bundled OpenBIOS.
 
+Tomba 2's widescreen and presentation-interpolation experiments live on the
+launcher's **Mods** page. They are disabled by default, leaving the authentic
+4:3/non-interpolated presentation as the baseline.
+
 ## Layout
 
 - `tomba2/` — disc image (bin/cue), extracted boot EXE `SCUS_944.54`,
@@ -56,16 +60,18 @@ prints the selected backend and never silently changes it.
 The boot EXE is a small loader; the bulk of the game streams from disc as code
 overlays at runtime (same architecture as Tomba! 1).
 
-## Adaptive widescreen
+## Built-in display mods
 
-Select **Adaptive** under **Aspect ratio** in the launcher to make Tomba 2's
-native-wide 3D view follow the live window or fullscreen aspect. Resizing wider
-reveals more of the world instead of stretching a fixed 16:9 image; narrowing
-back to 4:3 restores the authentic viewport. The selected fixed aspect controls
-the initial window shape, and the live view is capped at Tomba 2's offered 21:9
-limit. BIOS, FMVs,
-menus, and other true-2D screens remain pillarboxed at their authored 4:3
-aspect.
+Enable **Tomba 2 Widescreen** on the Mods page and select 16:9, 21:9, or
+Adaptive. Adaptive follows the live window or fullscreen aspect from 4:3 up to
+21:9. Resizing wider reveals more of the world instead of stretching a fixed
+image; BIOS, FMVs, menus, and other true-2D screens remain pillarboxed at their
+authored 4:3 aspect.
+
+**Tomba 2 Frame Rate** blends completed display images at a fixed target or the
+measured display refresh while guest simulation, input, timers, and audio keep
+their original cadence. It uses Ape Escape's corrected display-refresh
+sentinel, avoiding the previous uncapped presentation loop.
 
 ## License
 

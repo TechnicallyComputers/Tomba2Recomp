@@ -86,6 +86,19 @@ $fontCount = (Get-ChildItem (Join-Path $Stage "assets/fonts") -Filter *.ttf -Err
 $imgCount  = (Get-ChildItem (Join-Path $Stage "assets/img")   -Filter *.tga -ErrorAction SilentlyContinue).Count
 Write-Host "Bundled recomp-ui launcher assets: $fontCount font(s) + $imgCount image(s)"
 
+# Game-owned display enhancements are staged by CMake beside the development
+# executable. Preserve that exact catalog in the release package.
+$ModsSrc = Join-Path $BuildPath "mods"
+if (-not (Test-Path (Join-Path $ModsSrc "packages"))) {
+    throw "Tomba 2 preloaded mod catalog missing at $ModsSrc"
+}
+Copy-Item -Recurse -Force $ModsSrc (Join-Path $Stage "mods")
+$modManifestCount = (Get-ChildItem (Join-Path $Stage "mods/packages") -Recurse -Filter manifest.toml).Count
+if ($modManifestCount -ne 2) {
+    throw "Expected two Tomba 2 preloaded mod manifests, found $modManifestCount"
+}
+Write-Host "Bundled Tomba 2 mod catalog: $modManifestCount package(s)"
+
 # Player-facing game.toml: same effective runtime settings as the dev config,
 # minus dev-only sections (debug port, overlay autocompile command, [audit]).
 @"
@@ -135,11 +148,12 @@ renderer          = "opengl"
 supersampling     = 2
 antialiasing      = true
 texture_filtering = "nearest"
-frame_interpolation = true
-# 0 follows the current display; the launcher also offers fixed FPS targets.
+# Widescreen and presentation interpolation are owned by Tomba 2's built-in
+# catalog on the Mods page. Keep the generic Display controls hidden and clamp
+# stale settings to the authentic baseline until a selected mod activates.
+frame_interpolation = false
 frame_interpolation_fps = 0
-# Widescreen ships OFF (authentic 4:3). Opt in from the launcher's
-# experimental Widescreen toggle (16:9 / 21:9 native-wide gameplay).
+offer_frame_interpolation = false
 aspect_ratio      = "4:3"
 # FMV auto-skip stays off for the faithful presentation; the launcher's FMV
 # toggle enables it. These two settings make that toggle also cover the
@@ -153,6 +167,7 @@ fmv_skip_no_xa_hold = 600
 # is byte-identical to the original presentation. Gameplay frames are
 # detected by GTE activity; menus/FMV stay authored 4:3.
 [widescreen]
+offer            = false
 gte_game_mode    = true
 # Without this the runtime clamps 21:9 to 16:9 and the launcher hides the
 # Ultrawide option (v0.0.3/v0.0.4 shipped without it by mistake).

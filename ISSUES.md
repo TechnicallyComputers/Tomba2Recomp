@@ -29,16 +29,13 @@ production build sustained 598 guest frames over a 10-second steady-gameplay
 sample (59.8 FPS), up from the former 30-35 FPS collapse; debug GPU timer-query
 builds remain intentionally slower than production.
 
-Optional presentation-only frame interpolation is enabled for Tomba 2 on
-displays at 90 Hz or above. A shared OpenGL presentation context blends the two
-most recent completed display images at the host refresh rate while the guest,
-audio, and input continue at their original cadence. It adds one source-frame
-of display latency but does not accelerate game logic. Set
-`frame_interpolation = false` under `[video]`, or set
-`PSX_FRAME_INTERPOLATION=0`, to disable it. The launcher exposes both the
-toggle and a presentation target (display refresh, 90, 120, 144, 165, or 240
-FPS); the equivalent config key is `frame_interpolation_fps` and `0` means the
-current display refresh.
+Optional presentation-only frame interpolation is available through **Tomba 2
+Frame Rate** on the launcher's Mods page. A shared OpenGL presentation context
+blends the two most recent completed display images at the selected target
+while the guest, audio, and input continue at their original cadence. It adds
+one source-frame of display latency but does not accelerate game logic.
+**Display refresh** preserves the framework's zero sentinel and follows the
+measured monitor rate; it does not select the previous uncapped busy loop.
 
 The production build was exercised in both native 4:3 and native-wide 16:9 on a
 165 Hz panel. Steady Tomba 2 gameplay produced 29.96-30.16 new display images/s

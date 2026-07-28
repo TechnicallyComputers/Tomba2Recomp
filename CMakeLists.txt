@@ -1,5 +1,6 @@
 cmake_minimum_required(VERSION 3.20)
 project(Tomba2Recomp C CXX)
+include(CTest)
 
 set(CMAKE_C_STANDARD 99)
 set(CMAKE_CXX_STANDARD 17)
@@ -18,6 +19,9 @@ file(GLOB GAME_GENERATED_FULL CONFIGURE_DEPENDS
     "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.54_full_*.c")
 set(GAME_GENERATED_DISPATCH
     "${CMAKE_CURRENT_SOURCE_DIR}/generated/SCUS_944.54_dispatch.c")
+
+file(GLOB TOMBA2_MOD_PLUGIN_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/mods/*.c")
 
 # Isolated-worktree process-identity overrides. A sibling investigation may
 # build this same game repo from a DIFFERENT worktree at the same time; without
@@ -42,6 +46,7 @@ endif()
 psxrecomp_add_runtime_target(psx-runtime
     GAME_GENERATED_FULL_C "${GAME_GENERATED_FULL}"
     GAME_GENERATED_DISPATCH_C "${GAME_GENERATED_DISPATCH}"
+    EXTRAS_SOURCES ${TOMBA2_MOD_PLUGIN_SOURCES}
     # (OUTPUT_NAME set below: the exe ships as Tomba2Recomp.exe so process
     # management — taskkill, port collisions, task manager — never confuses
     # this title with other psxrecomp games' psx-runtime.exe instances.
@@ -62,3 +67,32 @@ psxrecomp_add_runtime_target(psx-runtime
 
 # Distinct process name (see comment above).
 set_target_properties(psx-runtime PROPERTIES OUTPUT_NAME "${_tomba2_exe_name}")
+
+# Ship Tomba 2's trusted, game-owned display enhancements beside the runtime.
+# The authentic 4:3/non-interpolated presentation remains the disabled baseline.
+set(TOMBA2_PRELOADED_MODS "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded")
+if(EXISTS "${TOMBA2_PRELOADED_MODS}/packages")
+    add_custom_command(TARGET psx-runtime POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${TOMBA2_PRELOADED_MODS}"
+            "$<TARGET_FILE_DIR:psx-runtime>/mods"
+        COMMENT "Preloading the Tomba 2 mod catalog")
+endif()
+
+if(BUILD_TESTING)
+    add_executable(tomba2_preloaded_mods_test
+        tests/test_preloaded_mods.cpp
+        "${PSXRECOMP_ROOT}/runtime/src/mod_packages.cpp"
+        "${PSXRECOMP_ROOT}/runtime/src/crc32.c"
+        "${PSXRECOMP_ROOT}/runtime/src/psx_sha256.c"
+    )
+    target_include_directories(tomba2_preloaded_mods_test PRIVATE
+        "${PSXRECOMP_ROOT}/runtime/include"
+        "${PSXRECOMP_ROOT}/recompiler/lib/toml11"
+    )
+    add_test(
+        NAME tomba2_preloaded_mods_test
+        COMMAND "$<TARGET_FILE:tomba2_preloaded_mods_test>"
+                "${TOMBA2_PRELOADED_MODS}"
+    )
+endif()

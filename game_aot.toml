@@ -97,7 +97,7 @@ lock_mode    = true
 renderer          = "opengl"
 supersampling     = 1
 texture_filtering = "nearest"
-# Tomba 2 owns presentation interpolation through its built-in Frame Rate mod.
+# Tomba 2 owns temporal frame blending through its built-in Frame Blending mod.
 # Hide the generic Display controls and ignore stale settings.toml values.
 frame_interpolation = false
 frame_interpolation_fps = 0

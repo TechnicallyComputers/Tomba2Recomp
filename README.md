@@ -26,7 +26,7 @@ BIOS is required: select your legally obtained Tomba! 2 disc image in the
 launcher and press Launch. The optional BIOS row accepts the exact supported
 retail dump; clear it to return to bundled OpenBIOS.
 
-Tomba 2's widescreen and presentation-interpolation experiments live on the
+Tomba 2's widescreen and temporal-frame-blending experiments live on the
 launcher's **Mods** page. They are disabled by default, leaving the authentic
 4:3/non-interpolated presentation as the baseline.
 
@@ -68,10 +68,11 @@ Adaptive. Adaptive follows the live window or fullscreen aspect from 4:3 up to
 image; BIOS, FMVs, menus, and other true-2D screens remain pillarboxed at their
 authored 4:3 aspect.
 
-**Tomba 2 Frame Rate** blends completed display images at a fixed target or the
-measured display refresh while guest simulation, input, timers, and audio keep
-their original cadence. It uses Ape Escape's corrected display-refresh
-sentinel, avoiding the previous uncapped presentation loop.
+**Tomba 2 Frame Blending** combines completed display images at a fixed target
+or the measured display refresh while guest simulation, input, timers, and
+audio keep their original cadence. It uses Ape Escape's motion-adaptive clarity
+blend to suppress crossfades on large pixel changes, reducing double-image
+trails. This is temporal blending, not motion-vector frame generation.
 
 ## License
 

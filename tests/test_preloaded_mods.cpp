@@ -134,6 +134,6 @@ int main(int argc, char** argv) {
     fs::remove_all(root, ec);
     std::cout << "Tomba 2 preloaded mods: 2 packages, "
                  "3 widescreen choices, 7 interpolated frame-rate choices, "
-                 "stock guest code untouched\n";
+                 "motion-adaptive clarity blend, stock guest code untouched\n";
     return 0;
 }

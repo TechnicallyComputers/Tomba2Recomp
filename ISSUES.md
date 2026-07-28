@@ -29,13 +29,14 @@ production build sustained 598 guest frames over a 10-second steady-gameplay
 sample (59.8 FPS), up from the former 30-35 FPS collapse; debug GPU timer-query
 builds remain intentionally slower than production.
 
-Optional presentation-only frame interpolation is available through **Tomba 2
-Frame Rate** on the launcher's Mods page. A shared OpenGL presentation context
-blends the two most recent completed display images at the selected target
-while the guest, audio, and input continue at their original cadence. It adds
-one source-frame of display latency but does not accelerate game logic.
+Optional presentation-only temporal blending is available through **Tomba 2
+Frame Blending** on the launcher's Mods page. A shared OpenGL presentation
+context combines the two most recent completed display images at the selected
+target while the guest, audio, and input continue at their original cadence.
+It adds one source-frame of display latency but does not accelerate game logic.
 **Display refresh** preserves the framework's zero sentinel and follows the
-measured monitor rate; it does not select the previous uncapped busy loop.
+measured monitor rate. Motion-adaptive clarity suppresses blending on large
+pixel changes to reduce double-image trails.
 
 The production build was exercised in both native 4:3 and native-wide 16:9 on a
 165 Hz panel. Steady Tomba 2 gameplay produced 29.96-30.16 new display images/s

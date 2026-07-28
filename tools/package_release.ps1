@@ -148,7 +148,7 @@ renderer          = "opengl"
 supersampling     = 2
 antialiasing      = true
 texture_filtering = "nearest"
-# Widescreen and presentation interpolation are owned by Tomba 2's built-in
+# Widescreen and temporal frame blending are owned by Tomba 2's built-in
 # catalog on the Mods page. Keep the generic Display controls hidden and clamp
 # stale settings to the authentic baseline until a selected mod activates.
 frame_interpolation = false

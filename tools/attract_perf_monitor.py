@@ -76,11 +76,32 @@ def main():
             loader = call(args.port, "overlay_loader_status")
             compiler = call(args.port, "autocompile_status")
             stamp = time.monotonic()
+            ws = gpu["ws"]
+            aspect_cone = ws.get("aspect_cone", {})
+            terrain_angle = ws.get("terrain_angle", {})
             row = {
                 "elapsed": round(stamp - started, 3),
-                "frame": gpu["ws"]["cur_frame"],
-                "game_mode": gpu["ws"]["game_mode"],
-                "native_43": gpu["ws"]["present_native_43"],
+                "frame": ws["cur_frame"],
+                "game_mode": ws["game_mode"],
+                "native_43": ws["present_native_43"],
+                "x_margin": ws.get("x_margin", 0),
+                "activation_margin": ws.get(
+                    "activation_margin", ws.get("x_margin", 0)),
+                "aspect_calls": aspect_cone.get("calls", 0),
+                "aspect_identity_43": aspect_cone.get("identity_43", 0),
+                "aspect_visible_keep": aspect_cone.get("visible_keep", 0),
+                "aspect_guard_keep": aspect_cone.get("guard_keep", 0),
+                "aspect_hysteresis_keep": aspect_cone.get(
+                    "hysteresis_keep", 0),
+                "aspect_outside_reject": aspect_cone.get(
+                    "outside_reject", 0),
+                "aspect_queue_reject": aspect_cone.get("queue_reject", 0),
+                "aspect_queue_highwater": aspect_cone.get(
+                    "queue_highwater", [0, 0, 0]),
+                "terrain_calls": terrain_angle.get("calls", 0),
+                "terrain_identity_43": terrain_angle.get("identity_43", 0),
+                "terrain_max_vanilla": terrain_angle.get("max_vanilla", 0),
+                "terrain_max_widened": terrain_angle.get("max_widened", 0),
                 "display_y": gpu["display_y"],
                 "gp0_draw": gpu["gp0_draw"],
                 "spu_frames": audio["taps"][0]["frames"],

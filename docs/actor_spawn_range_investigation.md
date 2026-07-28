@@ -1,7 +1,9 @@
 # Tomba! 2 aspect-aware world participation
 
-Status: validated implementation in progress on
-`feat/tomba2-aspect-participation` (2026-07-26).
+Status: latest-master correction validated on
+`codex/tomba2-popin-fix` (2026-07-28). The root is based on `fa6a75d` and
+the published framework commit is `a292a7c`, rebased onto framework master
+`8cb378a`.
 
 This document replaces the superseded experiment that forced thirteen
 distance/cone comparisons. That experiment conflated several systems, changed
@@ -123,25 +125,54 @@ kept with the same vertical and distance envelope as 4:3.
 ## Runtime policy
 
 - visible envelope: current client aspect, excluding the 16px guard;
-- activation guard: 16px outside the visible horizontal edge;
+- render/terrain guard: 16px outside the visible horizontal edge;
+- explicit X/Z resident-object activation lead: another 256px beyond the live
+  render margin (392px total per side at 21:9);
 - deactivation hysteresis: another 24px outside the guard;
 - true 4:3: zero margin and the original comparison result;
-- native generated, GCC overlay, and dirty-interpreter paths call the same
-  helper;
+- native generated/GCC overlay code and the dirty interpreter implement the
+  same activation-only transform;
 - relevant aspect policy and every exact site contribute to overlay cache
   identity.
 
 Changing window dimensions updates the envelope immediately. No recompilation
-or cache rebuild is needed because the generated code calls a live runtime
-helper.
+or cache rebuild is needed for aspect changes. Changing the configured
+activation lead requires game/overlay regeneration because native code embeds
+the bounded lead.
+
+### Maximal resident activation without global terrain widening
+
+The first maximal-view experiment raised the shared cull guard so the total
+21:9 margin became 392px everywhere. That also increased the terrain angular
+producer from the previously validated maximum of 651 to 807. The user
+reported substantially worse terrain culling, consistent with over-admitting
+cells into the fixed `0xFE` terrain lists.
+
+That global experiment is rejected. `activation_guard_pixels` is now a
+separate, bounded `[0, 256]` setting applied only to explicit `bias_sites` and
+`range_sites`. At 21:9:
+
+| path | margin / maximum |
+|---|---:|
+| visible reveal | 120px per side |
+| render/terrain margin | 136px per side |
+| explicit X/Z activation margin | 392px per side |
+| terrain angular maximum | 651 |
+
+This advances the known player-relative resident-object gate as far as the
+supported configuration permits without changing terrain angles, projected
+screen funnels, model cones, or their fixed-capacity queues. At true 4:3 both
+the render margin and activation margin are exactly zero.
 
 ## Safety exclusions
 
 - `FUN_80069B6C` is a behavior/teleport proximity trigger, not a pure
   visibility test. Its ground-plane X/Z pairs (`80069BA8`/`80069BB0` and
   `80069BCC`/`80069BD8`) remain aspect-widened because removing them provably
-  drops nearby composite scenery and terrain in the starting-area demo. Its
-  vertical Y pair (`80069B84`/`80069B8C`) remains vanilla.
+  drops nearby composite scenery and terrain in the starting-area demo. Those
+  explicit X/Z pairs, plus opcode-guarded overlay aliases at
+  `80110A08`/`80110A10`, receive the additional activation lead. Its vertical
+  Y pair (`80069B84`/`80069B8C`) remains vanilla.
 - The old far-distance sites (`8002B310`, `80077248`, `800772E4`,
   `80077380`, `80077390`, `80077424`, and `8007754C`) are not forced.
 - Combat/attack angle windows in `FUN_8001FAE0` and overlay variants are not
@@ -151,6 +182,30 @@ helper.
 - No address-only global comparison rewrite is used.
 
 ## Validation evidence
+
+2026-07-28 maximal-view correction on latest master:
+
+- root base `fa6a75d`; published framework `a292a7c` on master `8cb378a`;
+  codegen hash `8d349ec4`; overlay config hash `6782d636`;
+- guarded parser/code-generation tests pass, including range validation,
+  overlay-cache identity, and isolated activation-lead emission;
+- a fresh Release game regenerated 2,726 functions in six shards and built
+  successfully after canonical OpenBIOS regeneration;
+- the 21:9 attract run reached more than 42,000 guest frames with
+  `x_margin = 136`, `activation_margin = 392`, terrain maximum 651, zero
+  aspect-queue rejects, and queue high-water marks 16/25/6;
+- 600 actual host-window captures at 0.2-second intervals covered the beach,
+  furnace/chain, and mine-cart demos. The capture tool reported the window
+  live across 423/599 consecutive pairs; loading/title intervals account for
+  the static pairs;
+- visual review retained continuous terrain, foreground machinery, background
+  structures, signs, chests, props, and complete characters throughout the
+  sampled attract sequences;
+- the durable capture history records three executed overlay variants at the
+  opcode-guarded `80110A08` activation site;
+- a true-4:3 attract control reported both margins as zero. All 24,563
+  aspect-cone calls and all 810 terrain-angle calls took their exact 4:3
+  identity paths, with no wide keep/reject counters incremented.
 
 Compiler/runtime validation:
 
@@ -265,6 +320,7 @@ This solution covers candidates already resident in the loaded area. It does
 not deliberately create actors from unloaded rooms or run distant AI early.
 If a future scene proves that a visible enemy is not resident at all, that
 scene needs separate allocation/lifecycle attribution before any pool change.
-Literal maximal participation is intentionally not implemented: it is
-unnecessary for the current reproductions and would require producer,
-consumer, storage, and overflow analysis for each fixed pool.
+The known resident-area X/Z activation gate now uses the maximum supported
+lead. Literal participation from unloaded rooms is intentionally not
+implemented: it would require producer, consumer, storage, and overflow
+analysis for each fixed pool.

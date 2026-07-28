@@ -142,6 +142,11 @@ screen_h_imms = ["0xF0"]
 # hook below treats this separately from the visible field and reserves queue
 # headroom for candidates actually intersecting the wide frustum.
 guard_pixels = 16
+# Advance only the proven player-relative X/Z activation windows by the
+# maximum supported resident-area lead. This does not widen terrain-cell
+# angles or fixed-capacity model cones; at 21:9 the activation margin is
+# 120px visible reveal + 16px render guard + 256px activation lead = 392px.
+activation_guard_pixels = 256
 # Proven model participation windows. Overlay code at the same address is
 # opcode-checked and left untouched when it differs. FUN_80069B6C is a
 # behavior/teleport proximity trigger, not a pure render cull; retain only its

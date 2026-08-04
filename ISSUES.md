@@ -1,5 +1,82 @@
 # Tomba 2 Known Issues
 
+## First-person camera experiment
+
+Status: parked on `codex/tomba2-first-person-experiment`; not suitable for
+merging or release. The accompanying runtime work is parked on the
+`psxrecomp-v4` branch `codex/digital-pad-raw-stick-samples`.
+
+### Intended behavior
+
+The experiment adds a disabled-by-default mod that toggles first-person view
+with Select. The final parked snapshot restores the earlier direct camera-mode
+implementation from `1fc1959`, because it was visually closer to the intended
+result than the later render-boundary implementation. The left stick maps
+forward intent to the nearest authored path direction, a backward press requests
+one stock turn input, and the right stick controls free look. Horizontal
+movement input is intentionally neutral.
+
+The branch also disables and hides Turbo Loads for Tomba 2. Its shared runtime
+branch exposes raw stick samples to digital-pad mods and maps Select on
+supported modern controllers. It also contains the trusted guest
+render-boundary hook developed for the discarded follow-up approach; that hook
+is retained for provenance but is not used by the final parked first-person
+implementation.
+
+### Unresolved failures
+
+Manual gameplay testing still shows fundamental regressions:
+
+- actors and geometry are culled incorrectly from the first-person view; evil
+  pigs can disappear when Tomba approaches them;
+- turning and reversing are unstable, including spinning, flicker, camera/player
+  orientation disagreement, and forward input using a stale direction;
+- normal interactions are unreliable, especially jumping onto, capturing,
+  carrying, and throwing pigs;
+- special traversal and interaction states such as seesaws can clip Tomba
+  through the map or reveal scenery below the ground;
+- switching views during active interactions does not consistently preserve
+  the stock third-person behavior.
+
+Two approaches were tested. Direct camera-mode control looked more visually
+coherent but exhibited the failures above. A later render-boundary view
+override, preserved in commits `e4b331f` and `f431141`, caused even more severe
+problems and was rolled back before parking. Unit tests cover the host-side
+toggle, input translation, and camera state machine, but they do not model the
+game's actor, collision, culling, or scripted interaction systems and therefore
+do not establish gameplay correctness.
+
+### Technical assessment
+
+Neither changing Tomba 2's camera mode directly nor substituting one late
+scratchpad view matrix produced a safe separation between presentation and
+gameplay. Tomba 2 appears to consume camera/view state at multiple stages, and
+the exact consumers responsible for actor visibility have not been attributed.
+The game's path-constrained movement, facing, action, and scripted state are
+also tightly coupled; translating camera-relative intent back into digital
+Left/Right inputs can leave the view, player animation, and interaction state
+disagreeing.
+
+Do not continue by adding more coarse state guards or by directly writing
+Tomba's facing/action fields. A future attempt should start by:
+
+1. tracing the per-actor and terrain culling decisions for a reproducible pig
+   disappearance;
+2. identifying every consumer and lifetime of the scratchpad/GTE view state;
+3. locating a renderer-side transform point after game-owned culling and
+   interaction decisions are complete;
+4. validating stock input and interaction traces byte-for-byte before adding
+   camera-relative movement; and
+5. testing view entry/exit across pigs, seesaws, doors, ladders, path-depth
+   changes, scripted cameras, and transitions.
+
+### Parked revisions
+
+- Tomba 2 project: `codex/tomba2-first-person-experiment`; final implementation
+  restored from `1fc1959`
+- Discarded render-boundary attempts retained in history: `e4b331f`, `f431141`
+- Shared runtime: `b1fa93d` on `codex/digital-pad-raw-stick-samples`
+
 ## OpenGL renderer is substantially slower than software
 
 Status: resolved on `feat/opengl-performance`. OpenGL is again the default.

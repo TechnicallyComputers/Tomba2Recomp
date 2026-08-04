@@ -82,20 +82,18 @@ completion and teardown path.
 **First-Person Camera (Experimental)** places the camera at Tomba's live
 position and reinterprets plain directional traversal for a first-person
 layout. It starts in the stock third-person view; press Select to enter even
-during an interaction such as holding a pig, and press it again to exit
-immediately. The stock third-person camera continues running invisibly for
-gameplay, spawning, and culling; only the scene-render view matrix changes:
+during an interaction such as holding a pig. Exiting waits briefly for Tomba's
+physical position to stabilize so a moving platform is not interrupted:
 the left stick walks forward along the nearest authored path direction.
-Pulling it back sends one stock opposite-direction tap—the same input as
-pressing Left while Tomba faces Right or vice versa—then remains neutral while
-held. Its horizontal axis is intentionally inert. The right stick owns
+Pulling it back turns Tomba and the camera around without issuing walking
+input, while its horizontal axis is intentionally inert. The right stick owns
 horizontal and vertical free look. L1/R1 send the game's original Up/Down
 context inputs. Face-button interaction chords and their D-pad directions pass
 through unchanged for stock side/depth actions; Jump+forward retains the action
 button while using first-person movement, so jumping onto pigs remains on the
 normal capture path. Camera and traversal controls change together on the same
 transition. The game remains a path-constrained 2.5D platformer underneath,
-and special nonstandard camera modes take priority, so expect some clipping in this
+and scripted cameras take priority, so expect some clipping in this
 deliberately limited experiment.
 
 ## License

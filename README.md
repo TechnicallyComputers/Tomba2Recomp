@@ -84,12 +84,13 @@ position and reinterprets plain directional traversal for a first-person
 layout. It starts in the stock third-person view; press Select to enter even
 during an interaction such as holding a pig. Exiting waits briefly for Tomba's
 physical position to stabilize so a moving platform is not interrupted:
-Up walks forward along the nearest authored path direction, Down turns the
-view around and walks forward the opposite way, and Left/Right rotate the
-camera without moving Tomba. L1/R1 send the game's original Up/Down context
-inputs. Face-button interaction chords and their D-pad directions pass through
-unchanged for stock side/depth actions; Jump+Up retains the action button while
-using first-person forward movement, so jumping onto pigs remains on the
+the left stick walks forward along the nearest authored path direction.
+Pulling it back turns Tomba and the camera around without issuing walking
+input, while its horizontal axis is intentionally inert. The right stick owns
+horizontal and vertical free look. L1/R1 send the game's original Up/Down
+context inputs. Face-button interaction chords and their D-pad directions pass
+through unchanged for stock side/depth actions; Jump+forward retains the action
+button while using first-person movement, so jumping onto pigs remains on the
 normal capture path. Camera and traversal controls change together on the same
 transition. The game remains a path-constrained 2.5D platformer underneath,
 and scripted cameras take priority, so expect some clipping in this

@@ -16,10 +16,10 @@
  * the original renderer.
  *
  * The game is digital-native and constrains Tomba to authored 2.5D paths.
- * First-person input therefore turns a host heading with Left/Right and maps
- * forward intent to the nearest of the game's native path directions. Down
- * reverses the view before advancing. L1/R1 expose stock Up/Down for doors,
- * ladders, and depth transitions.
+ * First-person input therefore maps left-stick forward intent to the nearest
+ * native path direction, treats left-stick reverse as an orientation-only
+ * half-turn, and reserves the right stick for free look. L1/R1 expose stock
+ * Up/Down for doors, ladders, and depth transitions.
  */
 
 #define TOMBA2_PACKAGE_ID "tomba2.experimental.first-person"
@@ -35,7 +35,9 @@
 #define PLAYER_X                 0x800E7EACu
 #define PLAYER_Y                 0x800E7EB0u
 #define PLAYER_Z                 0x800E7EB4u
-#define PLAYER_PATH_HEADING      0x800E7ED6u
+#define PLAYER_RENDER_HEADING    0x800E7ED6u
+#define PLAYER_PATH_HEADING      0x800E7FC0u
+#define PLAYER_VISUAL_FACING     0x800E7FC7u
 #define PLAYER_DIRECTION_FLAGS   0x800E7FCAu
 
 /* FUN_80055E28 maps physical Left/Right through these current path-direction
@@ -90,6 +92,9 @@
 #define SAFE_TRANSITION_FRAMES   10
 #define SAFE_POSITION_RADIUS     (FIXED_ONE / 4)
 #define MIN_TURNAROUND_STEP      128
+#define STICK_CENTER             128
+#define STICK_DEADZONE           24
+#define MAX_LOOK_PITCH           512
 #define TOMBA2_PI                3.14159265358979323846
 
 static int s_enabled;
@@ -97,6 +102,7 @@ static int s_requested_enabled;
 static int s_camera_owned;
 static int s_heading_initialized;
 static int s_heading;
+static int s_look_pitch;
 static int s_last_path_heading;
 static int s_path_heading_valid;
 static int s_eye_height = DEFAULT_EYE_HEIGHT;
@@ -251,8 +257,7 @@ static int native_forward_button(void) {
         : PSX_PAD_LEFT;
 }
 
-static int facing_native_button(void) {
-    int facing = psx_mod_read_byte(PLAYER_DIRECTION_FLAGS) & 1u;
+static int native_button_for_facing(int facing) {
     uint16_t mask = read_u16(
         facing ? NATIVE_DIRECTION_ONE : NATIVE_DIRECTION_ZERO);
     mask &= (PSX_PAD_LEFT | PSX_PAD_RIGHT);
@@ -260,20 +265,74 @@ static int facing_native_button(void) {
         return (int)mask;
     /* The resident player input routine normally maintains the masks above.
      * Fall back deterministically during the first frame of a level load. */
-    return facing ? PSX_PAD_RIGHT : PSX_PAD_LEFT;
+    return facing ? PSX_PAD_LEFT : PSX_PAD_RIGHT;
+}
+
+static void orient_tomba_to_camera(void) {
+    int native_button = native_forward_button();
+    int facing =
+        native_button == native_button_for_facing(1) ? 1 : 0;
+    int path_heading =
+        (int)read_u16(PLAYER_PATH_HEADING) & GUEST_ANGLE_MASK;
+    uint8_t direction_flags =
+        psx_mod_read_byte(PLAYER_DIRECTION_FLAGS);
+
+    /* FUN_80055E28 normally copies desired facing (+0x14A bit 0) to visual
+     * facing (+0x147), and FUN_80055284 derives render yaw (+0x56) from the
+     * path basis (+0x140). Do that orientation-only portion directly: feeding
+     * a native Left/Right frame would also make Tomba walk. */
+    psx_mod_write_byte(PLAYER_VISUAL_FACING, (uint8_t)facing);
+    psx_mod_write_byte(
+        PLAYER_DIRECTION_FLAGS,
+        (uint8_t)((direction_flags & ~1u) | (uint8_t)facing));
+    write_u16(
+        PLAYER_RENDER_HEADING,
+        (uint16_t)wrap_heading(
+            path_heading + (facing ? GUEST_HALF_TURN : 0)));
 }
 
 static void initialize_heading_from_tomba(void) {
-    int path_heading = (int)read_u16(PLAYER_PATH_HEADING) &
-        GUEST_ANGLE_MASK;
-    s_heading = wrap_heading(
-        path_heading +
-        (facing_native_button() == PSX_PAD_RIGHT ? 0 : GUEST_HALF_TURN));
+    int path_heading =
+        (int)read_u16(PLAYER_PATH_HEADING) & GUEST_ANGLE_MASK;
+    /* +0x56 is Tomba's already-resolved render yaw. Unlike +0x140, it includes
+     * his current left/right orientation, so no second facing offset belongs
+     * here. */
+    s_heading =
+        (int)read_u16(PLAYER_RENDER_HEADING) & GUEST_ANGLE_MASK;
     s_heading_initialized = 1;
     s_last_path_heading = path_heading;
     s_path_heading_valid = 1;
     s_turnaround_remaining = 0;
     s_down_latched = 0;
+}
+
+static double stick_curve(uint8_t axis) {
+    int delta = (int)axis - STICK_CENTER;
+    int magnitude = delta < 0 ? -delta : delta;
+    double normalized;
+    double deadzone = (double)STICK_DEADZONE / 128.0;
+    if (magnitude <= STICK_DEADZONE)
+        return 0.0;
+    normalized = (double)delta / (delta < 0 ? 128.0 : 127.0);
+    normalized = (fabs(normalized) - deadzone) / (1.0 - deadzone);
+    normalized *= normalized;
+    return delta < 0 ? -normalized : normalized;
+}
+
+static int stick_forward(const uint8_t sticks[4]) {
+    return sticks[1] < STICK_CENTER - STICK_DEADZONE;
+}
+
+static int stick_reverse(const uint8_t sticks[4]) {
+    return sticks[1] > STICK_CENTER + STICK_DEADZONE;
+}
+
+static int stick_left(const uint8_t sticks[4]) {
+    return sticks[0] < STICK_CENTER - STICK_DEADZONE;
+}
+
+static int stick_right(const uint8_t sticks[4]) {
+    return sticks[0] > STICK_CENTER + STICK_DEADZONE;
 }
 
 static void follow_authored_path_heading(void) {
@@ -360,6 +419,7 @@ static void apply_requested_mode(void) {
     if (s_requested_enabled) {
         s_enabled = 1;
         s_heading_initialized = 0;
+        s_look_pitch = 0;
         s_path_heading_valid = 0;
         s_turnaround_remaining = 0;
         s_down_latched = 0;
@@ -375,52 +435,66 @@ static void apply_requested_mode(void) {
     s_transition_queued_announced = 0;
 }
 
-static void update_heading_controls(uint16_t pressed) {
-    int left_only;
-    int right_only;
-    int down_only;
+static void update_heading_controls(
+    uint16_t pressed, const uint8_t sticks[4]) {
+    double yaw_input;
+    double pitch_input;
+    int reverse_only;
     int step;
     if (!s_enabled || !s_camera_owned || !s_heading_initialized)
         return;
+
+    /* Free look is wholly camera-owned and independent of Tomba's movement or
+     * action state. Match the Zelda experiment's squared response curve: the
+     * right stick gives fine control near center and full configured speed at
+     * the rim. */
+    yaw_input = stick_curve(sticks[2]);
+    pitch_input = stick_curve(sticks[3]);
+    s_heading = wrap_heading(
+        s_heading + (int)(yaw_input * (double)s_turn_speed));
+    s_look_pitch +=
+        (int)(pitch_input * (double)(s_turn_speed * 3 / 4));
+    if (s_look_pitch > MAX_LOOK_PITCH)
+        s_look_pitch = MAX_LOOK_PITCH;
+    else if (s_look_pitch < -MAX_LOOK_PITCH)
+        s_look_pitch = -MAX_LOOK_PITCH;
+
     if (pressed & PSX_PAD_FACE) {
-        /* Interaction chords are game-owned. Do not rotate the view or carry
-         * a pending turn-around through pig capture/carry/throw input. */
+        /* Interaction chords remain game-owned. Free look above remains
+         * available, but do not carry a pending locomotion turn through pig
+         * capture/carry/throw input. */
         s_turnaround_remaining = 0;
         s_down_latched = 0;
         return;
     }
 
-    left_only = (pressed & PSX_PAD_LEFT) &&
-        !(pressed & PSX_PAD_RIGHT);
-    right_only = (pressed & PSX_PAD_RIGHT) &&
-        !(pressed & PSX_PAD_LEFT);
-    down_only = (pressed & PSX_PAD_DOWN) &&
-        !(pressed & PSX_PAD_UP);
-
-    if (left_only || right_only) {
-        s_turnaround_remaining = 0;
-        s_heading = wrap_heading(
-            s_heading + (right_only ? s_turn_speed : -s_turn_speed));
+    reverse_only =
+        (stick_reverse(sticks) || (pressed & PSX_PAD_DOWN)) &&
+        !stick_forward(sticks) && !(pressed & PSX_PAD_UP);
+    if (reverse_only && !s_down_latched &&
+        s_turnaround_remaining == 0) {
+        s_turnaround_remaining = GUEST_HALF_TURN;
     }
-    else {
-        if (down_only && !s_down_latched &&
-            s_turnaround_remaining == 0) {
-            s_turnaround_remaining = GUEST_HALF_TURN;
-        }
-        if (s_turnaround_remaining > 0) {
-            step = s_turn_speed * 4;
-            if (step < MIN_TURNAROUND_STEP)
-                step = MIN_TURNAROUND_STEP;
-            if (step > s_turnaround_remaining)
-                step = s_turnaround_remaining;
-            s_heading = wrap_heading(s_heading + step);
-            s_turnaround_remaining -= step;
-        }
+    if (s_turnaround_remaining > 0) {
+        step = s_turn_speed * 4;
+        if (step < MIN_TURNAROUND_STEP)
+            step = MIN_TURNAROUND_STEP;
+        if (step > s_turnaround_remaining)
+            step = s_turnaround_remaining;
+        s_heading = wrap_heading(s_heading + step);
+        s_turnaround_remaining -= step;
+        if (s_turnaround_remaining == 0)
+            orient_tomba_to_camera();
     }
-    s_down_latched = down_only;
+    s_down_latched = reverse_only;
 }
 
-static void write_guest_input(uint16_t pressed) {
+static void write_guest_input(
+    uint16_t pressed, const uint8_t sticks[4]) {
+    int forward_intent =
+        stick_forward(sticks) || (pressed & PSX_PAD_UP);
+    int reverse_intent =
+        stick_reverse(sticks) || (pressed & PSX_PAD_DOWN);
     uint16_t output_pressed = pressed & (uint16_t)~PSX_PAD_SELECT;
 
     /* Select is always host-only. When first-person is not actually active,
@@ -440,10 +514,21 @@ static void write_guest_input(uint16_t pressed) {
          * never reach it. L1/R1 remain explicit access to stock Up/Down. */
         output_pressed &= (uint16_t)~(
             PSX_PAD_DPAD | PSX_PAD_L1 | PSX_PAD_R1);
-        if (interaction_dpad == PSX_PAD_UP)
+        if (interaction_dpad == PSX_PAD_UP ||
+            (interaction_dpad == 0 && forward_intent &&
+             !reverse_intent)) {
             output_pressed |= (uint16_t)native_forward_button();
-        else
+        }
+        else if (interaction_dpad != 0) {
             output_pressed |= interaction_dpad;
+        }
+        else if (stick_reverse(sticks)) {
+            output_pressed |= PSX_PAD_DOWN;
+        }
+        else if (stick_left(sticks) != stick_right(sticks)) {
+            output_pressed |=
+                stick_left(sticks) ? PSX_PAD_LEFT : PSX_PAD_RIGHT;
+        }
         if (pressed & PSX_PAD_L1)
             output_pressed |= PSX_PAD_UP;
         if (pressed & PSX_PAD_R1)
@@ -454,14 +539,12 @@ static void write_guest_input(uint16_t pressed) {
 
     output_pressed &= (uint16_t)~(
         PSX_PAD_DPAD | PSX_PAD_L1 | PSX_PAD_R1);
-    /* Left/Right rotate only. Up advances. Down completes the smooth 180-degree
-     * turn before it begins advancing in the new view direction. */
-    if ((pressed & PSX_PAD_UP) && !(pressed & PSX_PAD_DOWN) &&
+    /* The left stick's vertical axis owns locomotion. Forward advances along
+     * the path; reverse turns Tomba and the camera around without ever
+     * injecting a walking frame. Horizontal left-stick/D-pad intent is inert.
+     * The right stick is consumed only by the camera path above. */
+    if (forward_intent && !reverse_intent &&
         s_turnaround_remaining == 0) {
-        output_pressed |= (uint16_t)native_forward_button();
-    }
-    else if ((pressed & PSX_PAD_DOWN) && !(pressed & PSX_PAD_UP) &&
-             s_turnaround_remaining == 0) {
         output_pressed |= (uint16_t)native_forward_button();
     }
     if (pressed & PSX_PAD_L1)
@@ -483,8 +566,11 @@ static void update_camera(void) {
     int32_t look_x;
     int32_t look_z;
     double radians;
+    double pitch_radians;
     double forward_x;
     double forward_z;
+    double look_horizontal;
+    double look_vertical;
 
     if (!s_enabled || !s_input_hook_installed ||
         !gameplay_camera_available()) {
@@ -514,11 +600,15 @@ static void update_camera(void) {
     player_y = read_s32(PLAYER_Y);
     player_z = read_s32(PLAYER_Z);
     radians = (double)s_heading * (2.0 * TOMBA2_PI / 4096.0);
+    pitch_radians =
+        (double)s_look_pitch * (2.0 * TOMBA2_PI / 4096.0);
     /* Tomba's path heading 0 advances along +X. Keeping camera and native
      * movement in that same angle basis prevents entry from looking sideways
      * off the authored path (often straight out over the ocean). */
     forward_x = cos(radians);
     forward_z = sin(radians);
+    look_horizontal = cos(pitch_radians);
+    look_vertical = sin(pitch_radians);
 
     /* Move slightly through the front of Tomba's model so his head and hair
      * sit behind the near plane instead of filling the view. */
@@ -528,15 +618,20 @@ static void update_camera(void) {
     eye_z = player_z +
         (int32_t)(forward_z * (double)(s_forward_offset * FIXED_ONE));
     look_x = eye_x +
-        (int32_t)(forward_x * (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE));
+        (int32_t)(forward_x * look_horizontal *
+                  (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE));
     look_z = eye_z +
-        (int32_t)(forward_z * (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE));
+        (int32_t)(forward_z * look_horizontal *
+                  (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE));
 
     write_s32(CAMERA_EYE_X, eye_x);
     write_s32(CAMERA_EYE_Y, eye_y);
     write_s32(CAMERA_EYE_Z, eye_z);
     write_s32(CAMERA_LOOK_X, look_x);
-    write_s32(CAMERA_LOOK_Y, eye_y);
+    write_s32(
+        CAMERA_LOOK_Y,
+        eye_y + (int32_t)(
+            look_vertical * (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE)));
     write_s32(CAMERA_LOOK_Z, look_z);
     psx_mod_write_byte(
         CAMERA_MODE,
@@ -544,7 +639,7 @@ static void update_camera(void) {
 
     if (!s_announced) {
         printf("[Mods] Tomba 2 first-person experiment active "
-               "(Up forward, Down turn-around, Left/Right look, "
+               "(left stick forward/turn-around, right stick free look, "
                "L1/R1 stock vertical, "
                "Select toggle)\n");
         s_announced = 1;
@@ -558,6 +653,7 @@ static void tomba2_first_person_activate(void) {
     s_requested_enabled = 0;
     s_camera_owned = 0;
     s_heading_initialized = 0;
+    s_look_pitch = 0;
     s_path_heading_valid = 0;
     s_turnaround_remaining = 0;
     s_toggle_latched = 0;
@@ -575,17 +671,19 @@ static void tomba2_first_person_activate(void) {
 }
 
 static void tomba2_first_person_vblank(void) {
+    uint8_t sticks[4];
     uint16_t raw_buttons = sio_get_pad_buttons_slot(0);
     uint16_t pressed = (uint16_t)~raw_buttons;
+    sio_get_pad_sticks(0, sticks);
     update_transition_stability();
     request_mode_toggle(pressed);
     apply_requested_mode();
     update_input_hook();
     follow_authored_path_heading();
-    update_heading_controls(pressed);
+    update_heading_controls(pressed, sticks);
     update_camera();
     if (s_input_hook_installed)
-        write_guest_input(pressed);
+        write_guest_input(pressed, sticks);
 }
 
 PSX_MOD_CONSTRUCTOR(tomba2_register_first_person_plugin) {

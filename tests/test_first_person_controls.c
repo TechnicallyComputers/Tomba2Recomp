@@ -8,6 +8,7 @@
 static uint8_t s_ram[2 * 1024 * 1024];
 static uint8_t s_scratch[1024];
 static uint16_t s_raw_buttons = 0xFFFFu;
+static uint8_t s_sticks[4] = {0x80u, 0x80u, 0x80u, 0x80u};
 static int s_game_started = 1;
 static int s_failures;
 
@@ -66,6 +67,13 @@ uint16_t sio_get_pad_buttons_slot(int slot) {
     return slot == 0 ? s_raw_buttons : 0xFFFFu;
 }
 
+void sio_get_pad_sticks(int slot, uint8_t out[4]) {
+    if (slot == 0)
+        memcpy(out, s_sticks, sizeof(s_sticks));
+    else
+        memset(out, 0x80, sizeof(s_sticks));
+}
+
 /* Keep the production implementation and this state-machine regression test in
  * one translation unit so the test exercises the actual internal transitions. */
 #include "../src/mods/tomba2_first_person_plugin.c"
@@ -112,14 +120,23 @@ static void frame(uint16_t active_low_buttons) {
     tomba2_first_person_vblank();
 }
 
+static void set_sticks(uint8_t lx, uint8_t ly, uint8_t rx, uint8_t ry) {
+    s_sticks[0] = lx;
+    s_sticks[1] = ly;
+    s_sticks[2] = rx;
+    s_sticks[3] = ry;
+}
+
 static void initialize_gameplay(void) {
     memset(s_ram, 0, sizeof(s_ram));
     memset(s_scratch, 0, sizeof(s_scratch));
     s_raw_buttons = 0xFFFFu;
+    set_sticks(0x80u, 0x80u, 0x80u, 0x80u);
     s_enabled = 0;
     s_requested_enabled = 0;
     s_camera_owned = 0;
     s_heading_initialized = 0;
+    s_look_pitch = 0;
     s_path_heading_valid = 0;
     s_heading = 0;
     s_toggle_latched = 0;
@@ -136,7 +153,9 @@ static void initialize_gameplay(void) {
     store_u32(PLAYER_X, 100u * FIXED_ONE);
     store_u32(PLAYER_Y, 1000u * FIXED_ONE);
     store_u32(PLAYER_Z, 200u * FIXED_ONE);
+    store_u16(PLAYER_RENDER_HEADING, 0);
     store_u16(PLAYER_PATH_HEADING, 0);
+    psx_mod_write_byte(PLAYER_VISUAL_FACING, 0);
     store_u16(NATIVE_DIRECTION_ZERO, PSX_PAD_RIGHT);
     store_u16(NATIVE_DIRECTION_ONE, PSX_PAD_LEFT);
     store_u32(INPUT_POLL_CALL, INPUT_POLL_CALL_STOCK);
@@ -179,13 +198,30 @@ int main(void) {
           "entry looks along Tomba's +X authored facing, not off-path");
 
     frame(0xFFFFu);
-    frame((uint16_t)~PSX_PAD_UP);
+    set_sticks(0x80u, 0x00u, 0x80u, 0x80u);
+    frame(0xFFFFu);
     check(load_u16(INPUT_OVERRIDE_WORD) == PSX_PAD_RIGHT,
-          "Up maps to Tomba's native forward direction");
+          "left-stick forward maps to Tomba's native path direction");
+    set_sticks(0x80u, 0x80u, 0x80u, 0x80u);
 
-    frame((uint16_t)~PSX_PAD_LEFT);
-    check(load_u16(INPUT_OVERRIDE_WORD) == 0,
-          "Left rotates the camera without moving Tomba");
+    {
+        int heading_before = s_heading;
+        frame((uint16_t)~PSX_PAD_LEFT);
+        check(load_u16(INPUT_OVERRIDE_WORD) == 0 &&
+                  s_heading == heading_before,
+              "left direction neither moves Tomba nor rotates the camera");
+        set_sticks(0x80u, 0x80u, 0xFFu, 0x80u);
+        frame(0xFFFFu);
+        check(load_u16(INPUT_OVERRIDE_WORD) == 0 &&
+                  s_heading > heading_before,
+              "right-stick horizontal input owns camera yaw");
+        set_sticks(0x80u, 0x80u, 0x80u, 0xFFu);
+        frame(0xFFFFu);
+        check(load_u16(INPUT_OVERRIDE_WORD) == 0 &&
+                  s_look_pitch > 0,
+              "right-stick vertical input owns camera pitch");
+        set_sticks(0x80u, 0x80u, 0x80u, 0x80u);
+    }
 
     {
         int heading_before = s_heading;
@@ -194,11 +230,19 @@ int main(void) {
                   (PSX_PAD_LEFT | 0x4000u) &&
                   s_heading == heading_before,
               "side-facing interaction chords stay stock without camera input");
-        frame((uint16_t)~(PSX_PAD_UP | 0x4000u));
+        set_sticks(0x80u, 0x00u, 0x80u, 0x80u);
+        frame((uint16_t)~0x4000u);
         check(load_u16(INPUT_OVERRIDE_WORD) ==
                   (PSX_PAD_RIGHT | 0x4000u) &&
                   s_heading == heading_before,
-              "jump plus Up preserves the action while moving forward");
+              "jump plus left-stick forward preserves Tomba's action");
+        set_sticks(0x00u, 0x80u, 0x80u, 0x80u);
+        frame((uint16_t)~0x4000u);
+        check(load_u16(INPUT_OVERRIDE_WORD) ==
+                  (PSX_PAD_LEFT | 0x4000u) &&
+                  s_heading == heading_before,
+              "left-stick interaction direction remains game-owned");
+        set_sticks(0x80u, 0x80u, 0x80u, 0x80u);
         frame((uint16_t)~(PSX_PAD_L1 | 0x4000u));
         check(load_u16(INPUT_OVERRIDE_WORD) ==
                   (PSX_PAD_UP | 0x4000u),
@@ -206,23 +250,42 @@ int main(void) {
     }
 
     s_heading = 0;
+    s_look_pitch = 0;
     s_turnaround_remaining = 0;
     s_down_latched = 0;
+    store_u16(PLAYER_RENDER_HEADING, 0);
+    psx_mod_write_byte(PLAYER_VISUAL_FACING, 0);
+    psx_mod_write_byte(PLAYER_DIRECTION_FLAGS, 0);
+    set_sticks(0x80u, 0xFFu, 0x80u, 0x80u);
     for (i = 0; i < 15; ++i) {
-        frame((uint16_t)~PSX_PAD_DOWN);
+        frame(0xFFFFu);
         check(load_u16(INPUT_OVERRIDE_WORD) == 0,
-              "Down does not move during the smooth turn-around");
+              "left-stick reverse never injects walking while turning");
     }
-    frame((uint16_t)~PSX_PAD_DOWN);
+    frame(0xFFFFu);
     check(s_heading == GUEST_HALF_TURN &&
-              load_u16(INPUT_OVERRIDE_WORD) == PSX_PAD_LEFT,
-          "Down completes 180 degrees before advancing the opposite way");
+              load_u16(INPUT_OVERRIDE_WORD) == 0,
+          "reverse completes 180 degrees without advancing");
+    check(psx_mod_read_byte(PLAYER_VISUAL_FACING) == 1 &&
+              (psx_mod_read_byte(PLAYER_DIRECTION_FLAGS) & 1u) == 1u &&
+              load_u16(PLAYER_RENDER_HEADING) == GUEST_HALF_TURN,
+          "reverse updates Tomba's visual orientation in place");
+    frame(0xFFFFu);
+    check(s_heading == GUEST_HALF_TURN &&
+              load_u16(INPUT_OVERRIDE_WORD) == 0,
+          "holding reverse does not repeat the turn or start walking");
     eye_x = (int32_t)load_u32(CAMERA_EYE_X);
     look_x = (int32_t)load_u32(CAMERA_LOOK_X);
     check(look_x - eye_x == -DEFAULT_LOOK_DISTANCE * FIXED_ONE,
           "turn-around reverses the rendered forward vector");
 
+    set_sticks(0x80u, 0x80u, 0x80u, 0x80u);
     frame(0xFFFFu);
+    set_sticks(0x80u, 0x00u, 0x80u, 0x80u);
+    frame(0xFFFFu);
+    check(load_u16(INPUT_OVERRIDE_WORD) == PSX_PAD_LEFT,
+          "forward after turning follows Tomba's reversed orientation");
+    set_sticks(0x80u, 0x80u, 0x80u, 0x80u);
     store_u32(
         PLAYER_X,
         load_u32(PLAYER_X) + (uint32_t)(SAFE_POSITION_RADIUS * 2));

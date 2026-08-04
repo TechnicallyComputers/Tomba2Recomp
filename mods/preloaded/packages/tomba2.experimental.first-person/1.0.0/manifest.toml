@@ -14,7 +14,7 @@ disc_sha256 = "8e9568388155787384c3166a5934a495fbff3fa57154ab0489b0f214fe05a8ab"
 [[feature]]
 id = "first-person"
 name = "First-Person Camera (Experimental)"
-description = "Press Select during normal gameplay to place the camera at Tomba's head and enable camera-relative movement. Tomba's action buttons and scripted cameras remain game-owned."
+description = "The left stick moves forward or turns Tomba around in place; the right stick provides free look. Tomba's action buttons and scripted cameras remain game-owned."
 group = "Gameplay"
 default_enabled = false
 
@@ -50,7 +50,7 @@ step = 16
 feature = "first-person"
 id = "turn-speed"
 label = "Turn speed"
-description = "Horizontal camera turn speed in the game's 4096-unit angle space."
+description = "Right-stick horizontal free-look speed in the game's 4096-unit angle space."
 group = "Controls"
 type = "integer"
 default = 32

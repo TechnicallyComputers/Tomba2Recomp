@@ -17,9 +17,11 @@
  *
  * The game is digital-native and constrains Tomba to authored 2.5D paths.
  * First-person input therefore maps left-stick forward intent to the nearest
- * native path direction, treats left-stick reverse as an orientation-only
- * half-turn, and reserves the right stick for free look. L1/R1 expose stock
- * Up/Down for doors, ladders, and depth transitions.
+ * native path direction, maps left-stick reverse to one stock
+ * opposite-direction tap, and reserves the right stick for free look. The
+ * visual pose is installed only at scene-render entry; the stock camera stays
+ * active for gameplay, spawning, and culling. L1/R1 expose stock Up/Down for
+ * doors, ladders, and depth transitions.
  */
 
 #define TOMBA2_PACKAGE_ID "tomba2.experimental.first-person"
@@ -28,16 +30,12 @@
 
 #define CAMERA_STATE             0x800E8008u
 #define CAMERA_MODE              0x800E806Cu
-#define CAMERA_LOOK_X            0x800E8040u
-#define CAMERA_LOOK_Y            0x800E8044u
-#define CAMERA_LOOK_Z            0x800E8048u
 
 #define PLAYER_X                 0x800E7EACu
 #define PLAYER_Y                 0x800E7EB0u
 #define PLAYER_Z                 0x800E7EB4u
 #define PLAYER_RENDER_HEADING    0x800E7ED6u
 #define PLAYER_PATH_HEADING      0x800E7FC0u
-#define PLAYER_VISUAL_FACING     0x800E7FC7u
 #define PLAYER_DIRECTION_FLAGS   0x800E7FCAu
 
 /* FUN_80055E28 maps physical Left/Right through these current path-direction
@@ -46,9 +44,18 @@
 #define NATIVE_DIRECTION_ONE     0x1F80016Eu
 #define SCRIPTED_INPUT_STATE     0x1F80019Au
 
-#define CAMERA_EYE_X             0x1F8000D0u
-#define CAMERA_EYE_Y             0x1F8000D4u
-#define CAMERA_EYE_Z             0x1F8000D8u
+#define VIEW_EYE_X               0x1F8000D0u
+#define VIEW_EYE_Y               0x1F8000D4u
+#define VIEW_EYE_Z               0x1F8000D8u
+#define VIEW_TARGET_X            0x1F8000DCu
+#define VIEW_TARGET_Y            0x1F8000E0u
+#define VIEW_TARGET_Z            0x1F8000E4u
+#define VIEW_MATRIX              0x1F8000F8u
+#define VIEW_TRANSPOSE_MATRIX    0x1F800118u
+#define VIEW_STATE_START         0x1F8000D0u
+#define VIEW_STATE_SIZE          0x68u
+
+#define GAMEPLAY_RENDER_ENTRY    0x8003F9A8u
 
 #define INPUT_POLL_CALL           0x80078938u
 #define INPUT_POLL_DELAY          0x8007893Cu
@@ -89,9 +96,6 @@
 #define DEFAULT_FORWARD_OFFSET   32
 #define DEFAULT_LOOK_DISTANCE    1024
 #define DEFAULT_TURN_SPEED       32
-#define SAFE_TRANSITION_FRAMES   10
-#define SAFE_POSITION_RADIUS     (FIXED_ONE / 4)
-#define MIN_TURNAROUND_STEP      128
 #define STICK_CENTER             128
 #define STICK_DEADZONE           24
 #define MAX_LOOK_PITCH           512
@@ -99,7 +103,7 @@
 
 static int s_enabled;
 static int s_requested_enabled;
-static int s_camera_owned;
+static int s_render_override_ready;
 static int s_heading_initialized;
 static int s_heading;
 static int s_look_pitch;
@@ -110,16 +114,19 @@ static int s_forward_offset = DEFAULT_FORWARD_OFFSET;
 static int s_turn_speed = DEFAULT_TURN_SPEED;
 static int s_toggle_latched;
 static int s_down_latched;
-static int s_turnaround_remaining;
-static int s_stable_frames;
-static int32_t s_stable_x;
-static int32_t s_stable_y;
-static int32_t s_stable_z;
-static int s_stable_position_valid;
+static int s_reverse_turn_input_pending;
 static int s_transition_queued_announced;
 static int s_announced;
 static int s_input_hook_installed;
 static int s_input_hook_announced;
+static int s_view_state_saved;
+static uint8_t s_stock_view_state[VIEW_STATE_SIZE];
+static int32_t s_render_eye_x;
+static int32_t s_render_eye_y;
+static int32_t s_render_eye_z;
+static int32_t s_render_target_x;
+static int32_t s_render_target_y;
+static int32_t s_render_target_z;
 
 static uint16_t read_u16(uint32_t address) {
     return (uint16_t)(
@@ -192,16 +199,15 @@ static int gameplay_camera_available(void) {
     return (x | y | z) != 0;
 }
 
-static void release_camera(void) {
-    uint8_t mode;
-    if (!s_camera_owned)
+static void restore_stock_view(void) {
+    uint32_t i;
+    if (!s_view_state_saved)
         return;
-    mode = psx_mod_read_byte(CAMERA_MODE);
-    if ((mode & CAMERA_MODE_MASK) == CAMERA_MODE_FREE_TARGET)
-        psx_mod_write_byte(CAMERA_MODE, (uint8_t)(mode & ~CAMERA_MODE_MASK));
-    s_camera_owned = 0;
-    s_heading_initialized = 0;
-    s_path_heading_valid = 0;
+    for (i = 0; i < VIEW_STATE_SIZE; ++i) {
+        psx_mod_write_byte(
+            VIEW_STATE_START + i, s_stock_view_state[i]);
+    }
+    s_view_state_saved = 0;
 }
 
 static void update_input_hook(void) {
@@ -211,12 +217,14 @@ static void update_input_hook(void) {
     if (!s_enabled) {
         if (call_word == INPUT_POLL_CALL_PATCHED &&
             delay_word == INPUT_POLL_DELAY_PATCHED) {
-            /* A savestate may contain the live hook and free-target camera
-             * while host-side plugin state correctly starts disabled. Treat
-             * that paired signature as our stale ownership and recover the
-             * stock camera before restoring the two input instructions. */
-            s_camera_owned = 1;
-            release_camera();
+            /* Recover savestates made by the earlier mode-7 implementation.
+             * The current render-only camera never changes CAMERA_MODE. */
+            uint8_t mode = psx_mod_read_byte(CAMERA_MODE);
+            if ((mode & CAMERA_MODE_MASK) == CAMERA_MODE_FREE_TARGET) {
+                psx_mod_write_byte(
+                    CAMERA_MODE,
+                    (uint8_t)(mode & ~CAMERA_MODE_MASK));
+            }
             write_s32(INPUT_POLL_CALL, (int32_t)INPUT_POLL_CALL_STOCK);
             write_s32(INPUT_POLL_DELAY, (int32_t)INPUT_POLL_DELAY_STOCK);
         }
@@ -268,27 +276,11 @@ static int native_button_for_facing(int facing) {
     return facing ? PSX_PAD_LEFT : PSX_PAD_RIGHT;
 }
 
-static void orient_tomba_to_camera(void) {
-    int native_button = native_forward_button();
+static int native_opposite_facing_button(void) {
     int facing =
-        native_button == native_button_for_facing(1) ? 1 : 0;
-    int path_heading =
-        (int)read_u16(PLAYER_PATH_HEADING) & GUEST_ANGLE_MASK;
-    uint8_t direction_flags =
-        psx_mod_read_byte(PLAYER_DIRECTION_FLAGS);
-
-    /* FUN_80055E28 normally copies desired facing (+0x14A bit 0) to visual
-     * facing (+0x147), and FUN_80055284 derives render yaw (+0x56) from the
-     * path basis (+0x140). Do that orientation-only portion directly: feeding
-     * a native Left/Right frame would also make Tomba walk. */
-    psx_mod_write_byte(PLAYER_VISUAL_FACING, (uint8_t)facing);
-    psx_mod_write_byte(
-        PLAYER_DIRECTION_FLAGS,
-        (uint8_t)((direction_flags & ~1u) | (uint8_t)facing));
-    write_u16(
-        PLAYER_RENDER_HEADING,
-        (uint16_t)wrap_heading(
-            path_heading + (facing ? GUEST_HALF_TURN : 0)));
+        psx_mod_read_byte(PLAYER_DIRECTION_FLAGS) & 1u;
+    int current = native_button_for_facing(facing);
+    return current == PSX_PAD_LEFT ? PSX_PAD_RIGHT : PSX_PAD_LEFT;
 }
 
 static void initialize_heading_from_tomba(void) {
@@ -302,7 +294,7 @@ static void initialize_heading_from_tomba(void) {
     s_heading_initialized = 1;
     s_last_path_heading = path_heading;
     s_path_heading_valid = 1;
-    s_turnaround_remaining = 0;
+    s_reverse_turn_input_pending = 0;
     s_down_latched = 0;
 }
 
@@ -352,42 +344,6 @@ static void follow_authored_path_heading(void) {
     s_last_path_heading = path_heading;
 }
 
-static int position_delta_safe(int32_t a, int32_t b) {
-    int64_t delta = (int64_t)a - (int64_t)b;
-    if (delta < 0)
-        delta = -delta;
-    return delta <= SAFE_POSITION_RADIUS;
-}
-
-static void update_transition_stability(void) {
-    int32_t x;
-    int32_t y;
-    int32_t z;
-    if (!gameplay_camera_available()) {
-        s_stable_frames = 0;
-        s_stable_position_valid = 0;
-        return;
-    }
-
-    x = read_s32(PLAYER_X);
-    y = read_s32(PLAYER_Y);
-    z = read_s32(PLAYER_Z);
-    if (s_stable_position_valid &&
-        position_delta_safe(x, s_stable_x) &&
-        position_delta_safe(y, s_stable_y) &&
-        position_delta_safe(z, s_stable_z)) {
-        if (s_stable_frames < SAFE_TRANSITION_FRAMES)
-            ++s_stable_frames;
-    }
-    else {
-        s_stable_x = x;
-        s_stable_y = y;
-        s_stable_z = z;
-        s_stable_position_valid = 1;
-        s_stable_frames = 1;
-    }
-}
-
 static void request_mode_toggle(uint16_t pressed) {
     int toggle = (pressed & PSX_PAD_SELECT) != 0u;
     if (toggle && !s_toggle_latched) {
@@ -398,19 +354,12 @@ static void request_mode_toggle(uint16_t pressed) {
 }
 
 static void apply_requested_mode(void) {
-    int mode;
     if (s_requested_enabled == s_enabled)
         return;
-    mode = psx_mod_read_byte(CAMERA_MODE) & CAMERA_MODE_MASK;
-    if ((s_requested_enabled &&
-         (!gameplay_camera_available() || mode != 0)) ||
-        (!s_requested_enabled &&
-         (s_stable_frames < SAFE_TRANSITION_FRAMES ||
-          (s_camera_owned && mode != CAMERA_MODE_FREE_TARGET)))) {
+    if (s_requested_enabled && !gameplay_camera_available()) {
         if (!s_transition_queued_announced) {
-            printf("[Mods] Tomba 2 first-person %s queued until the "
-                   "camera transition is safe\n",
-                   s_requested_enabled ? "entry" : "exit");
+            printf("[Mods] Tomba 2 first-person entry queued until "
+                   "normal gameplay resumes\n");
             s_transition_queued_announced = 1;
         }
         return;
@@ -421,15 +370,16 @@ static void apply_requested_mode(void) {
         s_heading_initialized = 0;
         s_look_pitch = 0;
         s_path_heading_valid = 0;
-        s_turnaround_remaining = 0;
+        s_reverse_turn_input_pending = 0;
         s_down_latched = 0;
         printf("[Mods] Tomba 2 first-person enabled\n");
     }
     else {
-        release_camera();
         s_enabled = 0;
-        s_turnaround_remaining = 0;
+        s_render_override_ready = 0;
+        s_reverse_turn_input_pending = 0;
         s_down_latched = 0;
+        restore_stock_view();
         printf("[Mods] Tomba 2 first-person disabled\n");
     }
     s_transition_queued_announced = 0;
@@ -440,8 +390,8 @@ static void update_heading_controls(
     double yaw_input;
     double pitch_input;
     int reverse_only;
-    int step;
-    if (!s_enabled || !s_camera_owned || !s_heading_initialized)
+    if (!s_enabled || !s_render_override_ready ||
+        !s_heading_initialized)
         return;
 
     /* Free look is wholly camera-owned and independent of Tomba's movement or
@@ -463,7 +413,7 @@ static void update_heading_controls(
         /* Interaction chords remain game-owned. Free look above remains
          * available, but do not carry a pending locomotion turn through pig
          * capture/carry/throw input. */
-        s_turnaround_remaining = 0;
+        s_reverse_turn_input_pending = 0;
         s_down_latched = 0;
         return;
     }
@@ -471,20 +421,12 @@ static void update_heading_controls(
     reverse_only =
         (stick_reverse(sticks) || (pressed & PSX_PAD_DOWN)) &&
         !stick_forward(sticks) && !(pressed & PSX_PAD_UP);
-    if (reverse_only && !s_down_latched &&
-        s_turnaround_remaining == 0) {
-        s_turnaround_remaining = GUEST_HALF_TURN;
-    }
-    if (s_turnaround_remaining > 0) {
-        step = s_turn_speed * 4;
-        if (step < MIN_TURNAROUND_STEP)
-            step = MIN_TURNAROUND_STEP;
-        if (step > s_turnaround_remaining)
-            step = s_turnaround_remaining;
-        s_heading = wrap_heading(s_heading + step);
-        s_turnaround_remaining -= step;
-        if (s_turnaround_remaining == 0)
-            orient_tomba_to_camera();
+    if (reverse_only && !s_down_latched) {
+        /* Reverse is a single stock opposite-direction tap. The game owns the
+         * resulting facing/animation state; the camera simply follows the same
+         * half-turn. Holding reverse emits no further movement. */
+        s_heading = wrap_heading(s_heading + GUEST_HALF_TURN);
+        s_reverse_turn_input_pending = 1;
     }
     s_down_latched = reverse_only;
 }
@@ -500,7 +442,8 @@ static void write_guest_input(
     /* Select is always host-only. When first-person is not actually active,
      * every other button passes through unchanged. Requested transitions do
      * not split camera and controls while Tomba is in an unstable state. */
-    if (!s_enabled || !s_camera_owned || !s_input_hook_installed) {
+    if (!s_enabled || !s_render_override_ready ||
+        !s_input_hook_installed) {
         write_u16(INPUT_OVERRIDE_WORD, output_pressed);
         return;
     }
@@ -539,12 +482,16 @@ static void write_guest_input(
 
     output_pressed &= (uint16_t)~(
         PSX_PAD_DPAD | PSX_PAD_L1 | PSX_PAD_R1);
-    /* The left stick's vertical axis owns locomotion. Forward advances along
-     * the path; reverse turns Tomba and the camera around without ever
-     * injecting a walking frame. Horizontal left-stick/D-pad intent is inert.
-     * The right stick is consumed only by the camera path above. */
-    if (forward_intent && !reverse_intent &&
-        s_turnaround_remaining == 0) {
+    /* Reverse emits one opposite-direction frame and then nothing until the
+     * stick is released. That is the same request stock third person receives
+     * when the player taps Left while facing Right (or vice versa), so Tomba
+     * owns facing, animation, collision, and interaction consequences. */
+    if (s_reverse_turn_input_pending) {
+        output_pressed |=
+            (uint16_t)native_opposite_facing_button();
+        s_reverse_turn_input_pending = 0;
+    }
+    else if (forward_intent && !reverse_intent) {
         output_pressed |= (uint16_t)native_forward_button();
     }
     if (pressed & PSX_PAD_L1)
@@ -555,16 +502,96 @@ static void write_guest_input(
     write_u16(INPUT_OVERRIDE_WORD, output_pressed);
 }
 
-static void update_camera(void) {
+static int fixed12(double value) {
+    double scaled = value * 4096.0;
+    return (int)(scaled < 0.0 ? scaled - 0.5 : scaled + 0.5);
+}
+
+static void write_view_matrix_component(
+    uint32_t base, int row, int column, int value) {
+    write_u16(
+        base + (uint32_t)((row * 3 + column) * 2),
+        (uint16_t)(int16_t)value);
+}
+
+static void install_render_view(void) {
+    uint32_t i;
+    int row;
+    int column;
+    int32_t eye[3];
+    int matrix[3][3];
+    int32_t translation[3];
+    double yaw;
+    double pitch;
+    double cy;
+    double sy;
+    double cp;
+    double sp;
+
+    if (!s_render_override_ready || s_view_state_saved)
+        return;
+    for (i = 0; i < VIEW_STATE_SIZE; ++i) {
+        s_stock_view_state[i] =
+            psx_mod_read_byte(VIEW_STATE_START + i);
+    }
+    s_view_state_saved = 1;
+
+    yaw = (double)s_heading * (2.0 * TOMBA2_PI / 4096.0);
+    pitch =
+        (double)s_look_pitch * (2.0 * TOMBA2_PI / 4096.0);
+    cy = cos(yaw);
+    sy = sin(yaw);
+    cp = cos(pitch);
+    sp = sin(pitch);
+
+    /* World-to-camera rows: right, up, forward. This is the same 12-bit
+     * fixed-point basis FUN_8006D02C builds from the stock eye/target pair. */
+    matrix[0][0] = fixed12(sy);
+    matrix[0][1] = 0;
+    matrix[0][2] = fixed12(-cy);
+    matrix[1][0] = fixed12(-sp * cy);
+    matrix[1][1] = fixed12(cp);
+    matrix[1][2] = fixed12(-sp * sy);
+    matrix[2][0] = fixed12(cp * cy);
+    matrix[2][1] = fixed12(sp);
+    matrix[2][2] = fixed12(cp * sy);
+
+    eye[0] = s_render_eye_x >> 16;
+    eye[1] = s_render_eye_y >> 16;
+    eye[2] = s_render_eye_z >> 16;
+    for (row = 0; row < 3; ++row) {
+        int64_t dot =
+            (int64_t)matrix[row][0] * eye[0] +
+            (int64_t)matrix[row][1] * eye[1] +
+            (int64_t)matrix[row][2] * eye[2];
+        translation[row] = (int32_t)(-dot / 4096);
+        for (column = 0; column < 3; ++column) {
+            write_view_matrix_component(
+                VIEW_MATRIX, row, column, matrix[row][column]);
+            write_view_matrix_component(
+                VIEW_TRANSPOSE_MATRIX, column, row,
+                matrix[row][column]);
+        }
+    }
+    write_u16(VIEW_MATRIX + 18u, 0);
+    write_s32(VIEW_MATRIX + 20u, translation[0]);
+    write_s32(VIEW_MATRIX + 24u, translation[1]);
+    write_s32(VIEW_MATRIX + 28u, translation[2]);
+    write_u16(VIEW_TRANSPOSE_MATRIX + 18u, 0);
+
+    write_s32(VIEW_EYE_X, s_render_eye_x);
+    write_s32(VIEW_EYE_Y, s_render_eye_y);
+    write_s32(VIEW_EYE_Z, s_render_eye_z);
+    write_s32(VIEW_TARGET_X, s_render_target_x);
+    write_s32(VIEW_TARGET_Y, s_render_target_y);
+    write_s32(VIEW_TARGET_Z, s_render_target_z);
+}
+
+static void update_render_pose(void) {
     uint8_t mode;
     int32_t player_x;
     int32_t player_y;
     int32_t player_z;
-    int32_t eye_x;
-    int32_t eye_y;
-    int32_t eye_z;
-    int32_t look_x;
-    int32_t look_z;
     double radians;
     double pitch_radians;
     double forward_x;
@@ -572,29 +599,20 @@ static void update_camera(void) {
     double look_horizontal;
     double look_vertical;
 
+    s_render_override_ready = 0;
     if (!s_enabled || !s_input_hook_installed ||
         !gameplay_camera_available()) {
-        release_camera();
         return;
     }
 
     mode = psx_mod_read_byte(CAMERA_MODE);
-    if (s_camera_owned &&
-        (mode & CAMERA_MODE_MASK) != CAMERA_MODE_FREE_TARGET) {
-        /* A cutscene or transition requested a special camera. Yield until the
-         * stock controller returns to its ordinary follow mode. Retain the
-         * user's heading so a one-frame camera request cannot reverse it. */
-        s_camera_owned = 0;
+    /* The stock controller remains completely active for gameplay, spawning,
+     * and culling. Yield visual ownership whenever it requests a special
+     * scripted mode; ordinary mode 0 is overridden only at render entry. */
+    if ((mode & CAMERA_MODE_MASK) != 0u)
         return;
-    }
-    if (!s_camera_owned) {
-        if ((mode & CAMERA_MODE_MASK) != 0u)
-            return;
-        s_camera_owned = 1;
-    }
-    if (!s_heading_initialized) {
+    if (!s_heading_initialized)
         initialize_heading_from_tomba();
-    }
 
     player_x = read_s32(PLAYER_X);
     player_y = read_s32(PLAYER_Y);
@@ -612,30 +630,20 @@ static void update_camera(void) {
 
     /* Move slightly through the front of Tomba's model so his head and hair
      * sit behind the near plane instead of filling the view. */
-    eye_x = player_x +
+    s_render_eye_x = player_x +
         (int32_t)(forward_x * (double)(s_forward_offset * FIXED_ONE));
-    eye_y = player_y - s_eye_height * FIXED_ONE;
-    eye_z = player_z +
+    s_render_eye_y = player_y - s_eye_height * FIXED_ONE;
+    s_render_eye_z = player_z +
         (int32_t)(forward_z * (double)(s_forward_offset * FIXED_ONE));
-    look_x = eye_x +
+    s_render_target_x = s_render_eye_x +
         (int32_t)(forward_x * look_horizontal *
                   (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE));
-    look_z = eye_z +
+    s_render_target_y = s_render_eye_y + (int32_t)(
+        look_vertical * (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE));
+    s_render_target_z = s_render_eye_z +
         (int32_t)(forward_z * look_horizontal *
                   (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE));
-
-    write_s32(CAMERA_EYE_X, eye_x);
-    write_s32(CAMERA_EYE_Y, eye_y);
-    write_s32(CAMERA_EYE_Z, eye_z);
-    write_s32(CAMERA_LOOK_X, look_x);
-    write_s32(
-        CAMERA_LOOK_Y,
-        eye_y + (int32_t)(
-            look_vertical * (double)(DEFAULT_LOOK_DISTANCE * FIXED_ONE)));
-    write_s32(CAMERA_LOOK_Z, look_z);
-    psx_mod_write_byte(
-        CAMERA_MODE,
-        (uint8_t)((mode & ~CAMERA_MODE_MASK) | CAMERA_MODE_FREE_TARGET));
+    s_render_override_ready = 1;
 
     if (!s_announced) {
         printf("[Mods] Tomba 2 first-person experiment active "
@@ -651,15 +659,14 @@ static void tomba2_first_person_activate(void) {
      * press is the only way to request first-person after activation. */
     s_enabled = 0;
     s_requested_enabled = 0;
-    s_camera_owned = 0;
+    s_render_override_ready = 0;
     s_heading_initialized = 0;
     s_look_pitch = 0;
     s_path_heading_valid = 0;
-    s_turnaround_remaining = 0;
+    s_reverse_turn_input_pending = 0;
     s_toggle_latched = 0;
     s_down_latched = 0;
-    s_stable_frames = 0;
-    s_stable_position_valid = 0;
+    s_view_state_saved = 0;
     s_transition_queued_announced = 0;
     s_input_hook_installed = 0;
     s_eye_height = read_option_int(
@@ -668,20 +675,25 @@ static void tomba2_first_person_activate(void) {
         "forward-offset", DEFAULT_FORWARD_OFFSET, 0, 160);
     s_turn_speed = read_option_int(
         "turn-speed", DEFAULT_TURN_SPEED, 8, 128);
+    if (!psx_mod_register_guest_function_hook(
+            GAMEPLAY_RENDER_ENTRY, install_render_view)) {
+        printf("[Mods] Tomba 2 first-person render hook unavailable\n");
+    }
 }
 
 static void tomba2_first_person_vblank(void) {
     uint8_t sticks[4];
     uint16_t raw_buttons = sio_get_pad_buttons_slot(0);
     uint16_t pressed = (uint16_t)~raw_buttons;
+    restore_stock_view();
     sio_get_pad_sticks(0, sticks);
-    update_transition_stability();
     request_mode_toggle(pressed);
     apply_requested_mode();
     update_input_hook();
     follow_authored_path_heading();
+    update_render_pose();
     update_heading_controls(pressed, sticks);
-    update_camera();
+    update_render_pose();
     if (s_input_hook_installed)
         write_guest_input(pressed, sticks);
 }

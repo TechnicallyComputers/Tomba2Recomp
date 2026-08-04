@@ -14,7 +14,7 @@ disc_sha256 = "8e9568388155787384c3166a5934a495fbff3fa57154ab0489b0f214fe05a8ab"
 [[feature]]
 id = "first-person"
 name = "First-Person Camera (Experimental)"
-description = "The left stick moves forward or turns Tomba around in place; the right stick provides free look. Tomba's action buttons and scripted cameras remain game-owned."
+description = "The stock camera remains active for spawning and culling while a render-only first-person view is shown. The left stick moves forward or sends one stock opposite-direction turn; the right stick provides free look."
 group = "Gameplay"
 default_enabled = false
 

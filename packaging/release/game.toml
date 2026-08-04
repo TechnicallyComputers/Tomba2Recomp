@@ -1,0 +1,109 @@
+[game]
+name = "Tomba! 2 - The Evil Swine Return"
+id = "SCUS-94454"
+exe = "tomba2/SCUS_944.54"
+disc = "tomba2/Tomba! 2 - The Evil Swine Return (USA).cue"
+load_address = "0x80010000"
+entry_pc = "0x80018B6C"
+text_size = "0x00028800"
+stack_base = "0x801FFFF0"
+
+# Required block; used only by the developer recompiler tool, not at runtime.
+[recompiler]
+seeds = "seeds/ghidra_funcs.txt"
+out_dir = "generated"
+
+# ---- Player-adjustable options ------------------------------------------
+# Edit, save, and restart Tomba2Recomp.exe to apply.
+[runtime]
+window_title = "Tomba! 2 Recompiled"
+memcard_dir = "saves"
+
+# Skip the PlayStation boot animation (the game's own kernel setup and disc
+# load still run for real, fast-forwarded). Set false for the fully faithful
+# boot, logos included.
+fast_boot = true
+
+# Overlay cache: keeps converted native code for game areas in the cache
+# folder, and records newly visited areas into overlay_captures.json so your
+# own cache grows as you play. Keep that file private - it contains game code
+# from your disc (see README).
+overlay_cache = true
+# Small timing-sensitive splash/FMV setup routines stay on the interpreter.
+overlay_native_block = [
+  "0x80096A90",
+  "0x80052078",
+  "0x800520C0",
+]
+
+# ---- Visual quality -----------------------------------------------------
+[video]
+# renderer: "opengl" (hardware renderer, default) or "software" (reference).
+renderer          = "opengl"
+# supersampling: render at this multiple of native resolution. 1 = native PSX.
+supersampling     = 2
+antialiasing      = true
+texture_filtering = "nearest"
+# Widescreen and temporal frame blending are owned by Tomba 2's built-in
+# catalog on the Mods page. Keep the generic Display controls hidden and clamp
+# stale settings to the authentic baseline until a selected mod activates.
+frame_interpolation = false
+frame_interpolation_fps = 0
+offer_frame_interpolation = false
+aspect_ratio      = "4:3"
+# FMV auto-skip stays off for the faithful presentation; the Skip FMVs mod
+# enables it. These settings make the mod also cover the silent RAM-preloaded
+# Whoopee Camp logo (it streams no XA audio, so the default movie detector
+# alone would miss it). Hide the legacy Display toggle.
+auto_skip_fmv       = false
+offer_skip_fmv      = false
+fmv_skip_no_xa      = true
+fmv_skip_no_xa_hold = 600
+
+# ---- Widescreen (experimental) -------------------------------------------
+# 16:9 / 21:9 native-wide gameplay, launcher/settings opt-in; the 4:3 default
+# is byte-identical to the original presentation. Gameplay frames are
+# detected by GTE activity; menus/FMV stay authored 4:3.
+[widescreen]
+offer            = false
+gte_game_mode    = true
+# Without this the runtime clamps 21:9 to 16:9 and the launcher hides the
+# Ultrawide option (v0.0.3/v0.0.4 shipped without it by mistake).
+offer_ultrawide  = true
+adaptive_view    = true
+nw_flat_backdrop = true
+nw_phase_backdrop = true
+
+[widescreen.cull]
+# Widen the game's own screen-extent culls only while a wide aspect is
+# active (identity at 4:3).
+auto_screen_x = true
+screen_w_imms = ["0x140"]
+screen_h_imms = ["0xF0"]
+bias_sites = [
+    "0x80069B84", "0x80069BA8", "0x80069BCC", "0x80110A08",
+    "0x8013F138", "0x8013F190", "0x8013F224", "0x8013F244",
+]
+range_sites = [
+    "0x80069B8C", "0x80069BB0", "0x80069BD8", "0x80110A10",
+]
+screen_x_sites = ["0x8003E228"]
+
+# ---- Controller ---------------------------------------------------------
+# Tomba! 2 is a d-pad platformer: real hardware boots a DualShock in DIGITAL
+# mode and the game expects it. Analog modes are not offered in this release
+# (the DualShock config-mode handshake is not fully emulated yet).
+[controller]
+default_mode = "digital"
+allow_hybrid = false
+lock_mode    = true
+
+# Conservative load-time optimization for SCUS_944.54's VSync(-1) query path.
+# The hook preserves original instruction timing/checkpoints while bypassing
+# side-effect-free GPUSTAT/Timer1 reads used only to stabilize the query.
+[load_accel.vsync_query]
+func = "0x80017E4C"
+counter_addr = "0x800267B4"
+gpustat_ptr_addr = "0x8002567C"
+timer1_ptr_addr = "0x80025680"
+timer1_cache_addr = "0x80025684"

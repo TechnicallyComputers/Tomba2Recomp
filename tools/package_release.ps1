@@ -1,5 +1,8 @@
 param(
-    [string]$Version = "v0.0.2",
+    # Empty means "read packaging/release/VERSION", the single source of truth
+    # shared with tools/package_appimage.sh so the two platforms cannot ship
+    # different version strings.
+    [string]$Version = "",
     [string]$BuildDir = "build-release",
     # Where the accumulated overlay cache lives (compile_overlays.py --out-dir,
     # per game.toml overlay_autocompile_cmd). Bundled as a head start; optional.
@@ -14,6 +17,15 @@ param(
 $ErrorActionPreference = "Stop"
 
 $Root = Resolve-Path (Join-Path $PSScriptRoot "..")
+$PackagingRelease = Join-Path $Root "packaging\release"
+if (-not $Version) {
+    $VersionFile = Join-Path $PackagingRelease "VERSION"
+    if (-not (Test-Path -LiteralPath $VersionFile)) {
+        throw "No -Version given and $VersionFile is missing"
+    }
+    $Version = (Get-Content -LiteralPath $VersionFile -Raw).Trim()
+    if (-not $Version) { throw "$VersionFile is empty" }
+}
 $BuildPath = Join-Path $Root $BuildDir
 $StageRoot = Join-Path $Root "release-stage"
 $Stage = Join-Path $StageRoot "Tomba2Recomp-windows-x64"
@@ -21,6 +33,70 @@ $ZipPath = Join-Path $Root ("Tomba2Recomp-{0}-windows-x64.zip" -f $Version)
 $MingwBin = "C:\msys64\mingw64\bin"
 
 $env:PATH = "$MingwBin;$env:PATH"
+Write-Host "Packaging Tomba2Recomp $Version"
+
+# ---- Path helpers ---------------------------------------------------------
+# PowerShell's Copy-Item decides "is the destination a file or a directory?"
+# from whether the destination EXISTS. That makes two silent failure modes:
+#
+#   Copy-Item file.txt C:\stage\sub\        -> if sub\ does not exist yet,
+#                                              a FILE named "sub" is created
+#   Copy-Item -Recurse dir C:\stage\assets  -> if assets\ already exists, the
+#                                              tree nests as assets\assets
+#
+# Both produce a package that looks built but is wrong. These helpers make the
+# intent explicit instead of inferred, and use -LiteralPath throughout so game
+# paths containing [ ] or other wildcard metacharacters are never globbed.
+function New-Dir {
+    param([Parameter(Mandatory)][string]$Path)
+    if (Test-Path -LiteralPath $Path -PathType Leaf) {
+        throw "Expected a directory but a file exists at: $Path"
+    }
+    if (-not (Test-Path -LiteralPath $Path)) {
+        New-Item -ItemType Directory -Force -LiteralPath $Path | Out-Null
+    }
+    return $Path
+}
+function Copy-FileTo {
+    # Copy a single file to an explicit destination FILE path.
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination
+    )
+    if (-not (Test-Path -LiteralPath $Source -PathType Leaf)) {
+        throw "Copy-FileTo: source file not found: $Source"
+    }
+    if (Test-Path -LiteralPath $Destination -PathType Container) {
+        throw "Copy-FileTo: destination is an existing directory: $Destination"
+    }
+    New-Dir (Split-Path -Parent $Destination) | Out-Null
+    Copy-Item -LiteralPath $Source -Destination $Destination -Force
+}
+function Copy-FileInto {
+    # Copy a single file INTO an explicit destination DIRECTORY, keeping its name.
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$DestinationDir
+    )
+    New-Dir $DestinationDir | Out-Null
+    Copy-FileTo -Source $Source -Destination (Join-Path $DestinationDir (Split-Path -Leaf $Source))
+}
+function Copy-TreeTo {
+    # Replace the destination directory with a copy of the source tree. Never
+    # nests, never merges into a stale tree.
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [Parameter(Mandatory)][string]$Destination
+    )
+    if (-not (Test-Path -LiteralPath $Source -PathType Container)) {
+        throw "Copy-TreeTo: source directory not found: $Source"
+    }
+    if (Test-Path -LiteralPath $Destination) {
+        Remove-Item -LiteralPath $Destination -Recurse -Force
+    }
+    New-Dir (Split-Path -Parent $Destination) | Out-Null
+    Copy-Item -LiteralPath $Source -Destination $Destination -Recurse -Force
+}
 
 # cmake writes benign warnings to STDERR; under Stop, PS 5.1 promotes native
 # stderr to a terminating error. Gate on $LASTEXITCODE instead (house pattern).
@@ -48,29 +124,29 @@ if ($SkipRegen) {
 Invoke-Native { cmake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF } "cmake configure"
 Invoke-Native { cmake --build $BuildPath -j $env:NUMBER_OF_PROCESSORS } "cmake build"
 
-if (Test-Path $StageRoot) {
-    Remove-Item -Recurse -Force $StageRoot
+if (Test-Path -LiteralPath $StageRoot) {
+    Remove-Item -LiteralPath $StageRoot -Recurse -Force
 }
-New-Item -ItemType Directory -Force $Stage | Out-Null
-New-Item -ItemType Directory -Force (Join-Path $Stage "saves") | Out-Null
+New-Dir $Stage | Out-Null
+New-Dir (Join-Path $Stage "saves") | Out-Null
 
 $DevExe = Join-Path $BuildPath "Tomba2Recomp.exe"
-if (-not (Test-Path $DevExe)) { $DevExe = Join-Path $BuildPath "psx-runtime.exe" }
-Copy-Item $DevExe (Join-Path $Stage "Tomba2Recomp.exe")
-Copy-Item (Join-Path $Root "README.md") $Stage
-Copy-Item (Join-Path $Root "LICENSE") $Stage
+if (-not (Test-Path -LiteralPath $DevExe)) { $DevExe = Join-Path $BuildPath "psx-runtime.exe" }
+Copy-FileTo $DevExe (Join-Path $Stage "Tomba2Recomp.exe")
+Copy-FileInto (Join-Path $Root "README.md") $Stage
+Copy-FileInto (Join-Path $Root "LICENSE") $Stage
+Copy-FileInto (Join-Path $PackagingRelease "START_HERE.txt") $Stage
 $BundledBiosSrc = Join-Path $BuildPath "bios"
 if (!(Test-Path (Join-Path $BundledBiosSrc "openbios.bin")) -or
     (Get-Item (Join-Path $BundledBiosSrc "openbios.bin")).Length -ne 524288 -or
     !(Test-Path (Join-Path $BundledBiosSrc "OpenBIOS.LICENSE"))) {
     throw "Runtime build did not stage OpenBIOS and its MIT notice"
 }
-$BundledBiosDst = Join-Path $Stage "bios"
-New-Item -ItemType Directory -Force $BundledBiosDst | Out-Null
-Copy-Item (Join-Path $BundledBiosSrc "openbios.bin") $BundledBiosDst
-Copy-Item (Join-Path $BundledBiosSrc "OpenBIOS.LICENSE") $BundledBiosDst
-if (Test-Path (Join-Path $Root "RELEASE_NOTES.md")) {
-    Copy-Item (Join-Path $Root "RELEASE_NOTES.md") $Stage
+$BundledBiosDst = New-Dir (Join-Path $Stage "bios")
+Copy-FileInto (Join-Path $BundledBiosSrc "openbios.bin") $BundledBiosDst
+Copy-FileInto (Join-Path $BundledBiosSrc "OpenBIOS.LICENSE") $BundledBiosDst
+if (Test-Path -LiteralPath (Join-Path $Root "RELEASE_NOTES.md")) {
+    Copy-FileInto (Join-Path $Root "RELEASE_NOTES.md") $Stage
 }
 
 # Launcher assets: this build ships the shared recomp-ui Dear ImGui launcher
@@ -81,7 +157,7 @@ $AssetsSrc = Join-Path $BuildPath "assets"
 if (-not (Test-Path (Join-Path $AssetsSrc "img"))) {
     throw "recomp-ui launcher assets missing at $AssetsSrc -- was the recomp-ui launcher built (recomp-ui junction present)?"
 }
-Copy-Item -Recurse -Force $AssetsSrc (Join-Path $Stage "assets")
+Copy-TreeTo $AssetsSrc (Join-Path $Stage "assets")
 $fontCount = (Get-ChildItem (Join-Path $Stage "assets/fonts") -Filter *.ttf -ErrorAction SilentlyContinue).Count
 $imgCount  = (Get-ChildItem (Join-Path $Stage "assets/img")   -Filter *.tga -ErrorAction SilentlyContinue).Count
 Write-Host "Bundled recomp-ui launcher assets: $fontCount font(s) + $imgCount image(s)"
@@ -92,7 +168,7 @@ $ModsSrc = Join-Path $BuildPath "mods"
 if (-not (Test-Path (Join-Path $ModsSrc "packages"))) {
     throw "Tomba 2 preloaded mod catalog missing at $ModsSrc"
 }
-Copy-Item -Recurse -Force $ModsSrc (Join-Path $Stage "mods")
+Copy-TreeTo $ModsSrc (Join-Path $Stage "mods")
 $modManifestCount = (Get-ChildItem (Join-Path $Stage "mods/packages") -Recurse -Filter manifest.toml).Count
 if ($modManifestCount -ne 3) {
     throw "Expected three Tomba 2 preloaded mod manifests, found $modManifestCount"
@@ -101,117 +177,9 @@ Write-Host "Bundled Tomba 2 mod catalog: $modManifestCount package(s)"
 
 # Player-facing game.toml: same effective runtime settings as the dev config,
 # minus dev-only sections (debug port, overlay autocompile command, [audit]).
-@"
-[game]
-name = "Tomba! 2 - The Evil Swine Return"
-id = "SCUS-94454"
-exe = "tomba2/SCUS_944.54"
-disc = "tomba2/Tomba! 2 - The Evil Swine Return (USA).cue"
-load_address = "0x80010000"
-entry_pc = "0x80018B6C"
-text_size = "0x00028800"
-stack_base = "0x801FFFF0"
-
-# Required block; used only by the developer recompiler tool, not at runtime.
-[recompiler]
-seeds = "seeds/ghidra_funcs.txt"
-out_dir = "generated"
-
-# ---- Player-adjustable options ------------------------------------------
-# Edit, save, and restart Tomba2Recomp.exe to apply.
-[runtime]
-window_title = "Tomba! 2 Recompiled"
-memcard_dir = "saves"
-
-# Skip the PlayStation boot animation (the game's own kernel setup and disc
-# load still run for real, fast-forwarded). Set false for the fully faithful
-# boot, logos included.
-fast_boot = true
-
-# Overlay cache: keeps converted native code for game areas in the cache
-# folder, and records newly visited areas into overlay_captures.json so your
-# own cache grows as you play. Keep that file private - it contains game code
-# from your disc (see README).
-overlay_cache = true
-# Small timing-sensitive splash/FMV setup routines stay on the interpreter.
-overlay_native_block = [
-  "0x80096A90",
-  "0x80052078",
-  "0x800520C0",
-]
-
-# ---- Visual quality -----------------------------------------------------
-[video]
-# renderer: "opengl" (hardware renderer, default) or "software" (reference).
-renderer          = "opengl"
-# supersampling: render at this multiple of native resolution. 1 = native PSX.
-supersampling     = 2
-antialiasing      = true
-texture_filtering = "nearest"
-# Widescreen and temporal frame blending are owned by Tomba 2's built-in
-# catalog on the Mods page. Keep the generic Display controls hidden and clamp
-# stale settings to the authentic baseline until a selected mod activates.
-frame_interpolation = false
-frame_interpolation_fps = 0
-offer_frame_interpolation = false
-aspect_ratio      = "4:3"
-# FMV auto-skip stays off for the faithful presentation; the Skip FMVs mod
-# enables it. These settings make the mod also cover the silent RAM-preloaded
-# Whoopee Camp logo (it streams no XA audio, so the default movie detector
-# alone would miss it). Hide the legacy Display toggle.
-auto_skip_fmv       = false
-offer_skip_fmv      = false
-fmv_skip_no_xa      = true
-fmv_skip_no_xa_hold = 600
-
-# ---- Widescreen (experimental) -------------------------------------------
-# 16:9 / 21:9 native-wide gameplay, launcher/settings opt-in; the 4:3 default
-# is byte-identical to the original presentation. Gameplay frames are
-# detected by GTE activity; menus/FMV stay authored 4:3.
-[widescreen]
-offer            = false
-gte_game_mode    = true
-# Without this the runtime clamps 21:9 to 16:9 and the launcher hides the
-# Ultrawide option (v0.0.3/v0.0.4 shipped without it by mistake).
-offer_ultrawide  = true
-adaptive_view    = true
-nw_flat_backdrop = true
-nw_phase_backdrop = true
-
-[widescreen.cull]
-# Widen the game's own screen-extent culls only while a wide aspect is
-# active (identity at 4:3).
-auto_screen_x = true
-screen_w_imms = ["0x140"]
-screen_h_imms = ["0xF0"]
-bias_sites = [
-    "0x80069B84", "0x80069BA8", "0x80069BCC", "0x80110A08",
-    "0x8013F138", "0x8013F190", "0x8013F224", "0x8013F244",
-]
-range_sites = [
-    "0x80069B8C", "0x80069BB0", "0x80069BD8", "0x80110A10",
-]
-screen_x_sites = ["0x8003E228"]
-
-# ---- Controller ---------------------------------------------------------
-# Tomba! 2 is a d-pad platformer: real hardware boots a DualShock in DIGITAL
-# mode and the game expects it. Analog modes are not offered in this release
-# (the DualShock config-mode handshake is not fully emulated yet).
-[controller]
-default_mode = "digital"
-allow_hybrid = false
-lock_mode    = true
-
-# Conservative load-time optimization for SCUS_944.54's VSync(-1) query path.
-# The hook preserves original instruction timing/checkpoints while bypassing
-# side-effect-free GPUSTAT/Timer1 reads used only to stabilize the query.
-[load_accel.vsync_query]
-func = "0x80017E4C"
-counter_addr = "0x800267B4"
-gpustat_ptr_addr = "0x8002567C"
-timer1_ptr_addr = "0x80025680"
-timer1_cache_addr = "0x80025684"
-"@ | Set-Content -Encoding ASCII (Join-Path $Stage "game.toml")
+# Player-facing game.toml comes from packaging/release/game.toml, the same
+# file tools/package_appimage.sh ships, so Windows and Linux cannot drift.
+Copy-FileTo (Join-Path $PackagingRelease "game.toml") (Join-Path $Stage "game.toml")
 
 # Prebuilt overlay cache: DLLs, range manifests, and exact-hash BIOS-resident
 # sidecars; only THIS build's codegen tag.
@@ -332,32 +300,8 @@ if ($savesFiles) {
 }
 Write-Host "Verified bundled OpenBIOS; no retail BIOS/disc/save/sidecar files"
 
-@"
-; PSXRecomp input mapping. PSX buttons are active when any listed source is pressed.
-; Sources use SDL/Xbox names: a,b,x,y,back,start,leftshoulder,rightshoulder,
-; lefttrigger,righttrigger,dpup,dpdown,dpleft,dpright,leftx-/leftx+/lefty-/lefty+.
-
-[controller]
-enabled = true
-device = 0
-deadzone = 12000
-
-[mapping]
-up = dpup,lefty-
-down = dpdown,lefty+
-left = dpleft,leftx-
-right = dpright,leftx+
-cross = a
-circle = b
-square = x
-triangle = y
-l1 = leftshoulder
-r1 = rightshoulder
-l2 = lefttrigger
-r2 = righttrigger
-start = start
-select = back
-"@ | Set-Content -Encoding ASCII (Join-Path $Stage "input.ini")
+# Default controller mapping: shared with the AppImage package.
+Copy-FileTo (Join-Path $PackagingRelease "input.ini") (Join-Path $Stage "input.ini")
 
 $TombaSha = (& git -C $Root rev-parse --short HEAD).Trim()
 $PsxRecompSha = (& git -C (Join-Path $Root "psxrecomp-v4") rev-parse --short HEAD).Trim()
@@ -391,7 +335,55 @@ Known items in this release:
 - Analog controller modes are not offered (the game is digital-native).
 "@ | Set-Content -Encoding ASCII (Join-Path $Stage "RELEASE.txt")
 
-if (Test-Path $ZipPath) { Remove-Item -Force $ZipPath }
-Compress-Archive -Path $Stage -DestinationPath $ZipPath
-$zipMB = "{0:N1}" -f ((Get-Item $ZipPath).Length / 1MB)
-Write-Host "Release packaged: $ZipPath (~$zipMB MB)"
+# ---- Deterministic archive ------------------------------------------------
+# Compress-Archive embeds real mtimes and walks the tree in filesystem order,
+# so two identical stages produce different bytes. Build the zip by hand with
+# sorted entry names and one fixed timestamp (SOURCE_DATE_EPOCH, defaulting to
+# the git commit date) so a rebuild of the same sources is byte-identical and
+# the published SHA256 is meaningful.
+if (Test-Path -LiteralPath $ZipPath) { Remove-Item -LiteralPath $ZipPath -Force }
+
+if ($env:SOURCE_DATE_EPOCH) {
+    $epoch = [int64]$env:SOURCE_DATE_EPOCH
+} else {
+    $epoch = [int64](& git -C $Root log -1 --format=%ct).Trim()
+}
+$stamp = [System.DateTimeOffset]::FromUnixTimeSeconds($epoch).UtcDateTime
+Write-Host ("Deterministic zip: SOURCE_DATE_EPOCH={0} ({1:yyyy-MM-dd HH:mm:ss}Z)" -f $epoch, $stamp)
+
+Add-Type -AssemblyName System.IO.Compression | Out-Null
+Add-Type -AssemblyName System.IO.Compression.FileSystem | Out-Null
+
+$stageParent = Split-Path -Parent $Stage
+$entries = Get-ChildItem -LiteralPath $Stage -Recurse -File |
+    ForEach-Object {
+        [PSCustomObject]@{
+            Full = $_.FullName
+            # Forward slashes, relative to the stage's parent so the archive
+            # keeps its single Tomba2Recomp-windows-x64/ root folder.
+            Name = $_.FullName.Substring($stageParent.Length).TrimStart('\','/').Replace('\','/')
+        }
+    } | Sort-Object -Property Name -CaseSensitive
+
+$zipStream = [System.IO.File]::Open($ZipPath, [System.IO.FileMode]::CreateNew)
+try {
+    $archive = New-Object System.IO.Compression.ZipArchive(
+        $zipStream, [System.IO.Compression.ZipArchiveMode]::Create, $true)
+    try {
+        foreach ($e in $entries) {
+            $entry = $archive.CreateEntry($e.Name, [System.IO.Compression.CompressionLevel]::Optimal)
+            $entry.LastWriteTime = [System.DateTimeOffset]::new($stamp, [TimeSpan]::Zero)
+            $in  = [System.IO.File]::OpenRead($e.Full)
+            try {
+                $out = $entry.Open()
+                try { $in.CopyTo($out) } finally { $out.Dispose() }
+            } finally { $in.Dispose() }
+        }
+    } finally { $archive.Dispose() }
+} finally { $zipStream.Dispose() }
+
+$zipMB = "{0:N1}" -f ((Get-Item -LiteralPath $ZipPath).Length / 1MB)
+$zipSha = (Get-FileHash -LiteralPath $ZipPath -Algorithm SHA256).Hash.ToLower()
+Write-Host "Release packaged: $ZipPath (~$zipMB MB, $($entries.Count) entries)"
+Write-Host "SHA256: $zipSha"
+Set-Content -LiteralPath "$ZipPath.sha256" -Encoding ASCII -Value "$zipSha  $(Split-Path -Leaf $ZipPath)"

@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=Tomba! 2 Recompiled
+Comment=Static recompilation of Tomba! 2 - The Evil Swine Return
+Exec=Tomba2Recomp
+Icon=io.github.mstan.Tomba2Recomp
+Categories=Game;
+Terminal=false

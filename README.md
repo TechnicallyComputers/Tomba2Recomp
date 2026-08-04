@@ -95,7 +95,7 @@ through unchanged for stock side/depth actions; Jump+forward retains the action
 button while using first-person movement, so jumping onto pigs remains on the
 normal capture path. Camera and traversal controls change together on the same
 transition. The game remains a path-constrained 2.5D platformer underneath,
-and scripted cameras take priority, so expect some clipping in this
+and special nonstandard camera modes take priority, so expect some clipping in this
 deliberately limited experiment.
 
 ## License

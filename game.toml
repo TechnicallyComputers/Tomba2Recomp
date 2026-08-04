@@ -27,6 +27,9 @@ debug_port = 4515
 window_title = "Tomba! 2 Recompiled"
 controller = "digital"
 memcard_dir = "saves"
+# This streaming, interaction-heavy title does not benefit from running load
+# frames unpaced. Keep the generic Turbo Loads setting unavailable and off.
+turbo_loads = false
 
 # Overlay cache (the real perf fix). Tomba 2's title/menu/level/FMV-driver code
 # is runtime-loaded overlay, not in the 474 compiled boot-EXE funcs, so by

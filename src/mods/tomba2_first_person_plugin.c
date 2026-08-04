@@ -42,7 +42,6 @@
  * masks and retains the result in PLAYER_DIRECTION_FLAGS bit 0. */
 #define NATIVE_DIRECTION_ZERO    0x1F80016Cu
 #define NATIVE_DIRECTION_ONE     0x1F80016Eu
-#define SCRIPTED_INPUT_STATE     0x1F80019Au
 
 #define VIEW_EYE_X               0x1F8000D0u
 #define VIEW_EYE_Y               0x1F8000D4u
@@ -119,6 +118,7 @@ static int s_transition_queued_announced;
 static int s_announced;
 static int s_input_hook_installed;
 static int s_input_hook_announced;
+static int s_render_hook_announced;
 static int s_view_state_saved;
 static uint8_t s_stock_view_state[VIEW_STATE_SIZE];
 static int32_t s_render_eye_x;
@@ -188,8 +188,7 @@ static int gameplay_camera_available(void) {
     int32_t y;
     int32_t z;
     if (!psx_mod_game_started() ||
-        psx_mod_read_byte(CAMERA_STATE) != 1u ||
-        psx_mod_read_byte(SCRIPTED_INPUT_STATE) == 1u)
+        psx_mod_read_byte(CAMERA_STATE) != 1u)
         return 0;
     x = read_s32(PLAYER_X);
     y = read_s32(PLAYER_Y);
@@ -530,6 +529,11 @@ static void install_render_view(void) {
 
     if (!s_render_override_ready || s_view_state_saved)
         return;
+    if (!s_render_hook_announced) {
+        printf("[Mods] Tomba 2 first-person render boundary active\n");
+        fflush(stdout);
+        s_render_hook_announced = 1;
+    }
     for (i = 0; i < VIEW_STATE_SIZE; ++i) {
         s_stock_view_state[i] =
             psx_mod_read_byte(VIEW_STATE_START + i);
@@ -669,6 +673,7 @@ static void tomba2_first_person_activate(void) {
     s_view_state_saved = 0;
     s_transition_queued_announced = 0;
     s_input_hook_installed = 0;
+    s_render_hook_announced = 0;
     s_eye_height = read_option_int(
         "eye-height", DEFAULT_EYE_HEIGHT, 96, 320);
     s_forward_offset = read_option_int(

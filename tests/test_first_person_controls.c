@@ -157,7 +157,6 @@ static void initialize_gameplay(void) {
 
     psx_mod_write_byte(CAMERA_STATE, 1);
     psx_mod_write_byte(PLAYER_DIRECTION_FLAGS, 0);
-    psx_mod_write_byte(SCRIPTED_INPUT_STATE, 0);
     store_u32(PLAYER_X, 100u * FIXED_ONE);
     store_u32(PLAYER_Y, 1000u * FIXED_ONE);
     store_u32(PLAYER_Z, 200u * FIXED_ONE);
@@ -335,12 +334,15 @@ int main(void) {
     check((psx_mod_read_byte(CAMERA_MODE) & CAMERA_MODE_MASK) == 0,
           "third-person exit restores the stock camera mode");
 
-    psx_mod_write_byte(SCRIPTED_INPUT_STATE, 1);
     frame(0xFFFFu);
     frame((uint16_t)~PSX_PAD_SELECT);
     frame(0xFFFFu);
-    check(!s_enabled && load_u32(INPUT_POLL_CALL) == INPUT_POLL_CALL_STOCK,
-          "attract demos and scripted input cannot enter first-person");
+    check(s_enabled && s_render_override_ready &&
+              load_u32(INPUT_POLL_CALL) == INPUT_POLL_CALL_PATCHED,
+          "normal interactions can enter first-person without changing game state");
+    s_guest_hook();
+    check(s_view_state_saved,
+          "interaction frames retain the render-only first-person view");
 
     if (s_failures)
         return 1;

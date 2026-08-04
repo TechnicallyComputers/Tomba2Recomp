@@ -68,7 +68,7 @@ psxrecomp_add_runtime_target(psx-runtime
 # Distinct process name (see comment above).
 set_target_properties(psx-runtime PROPERTIES OUTPUT_NAME "${_tomba2_exe_name}")
 
-# Ship Tomba 2's trusted, game-owned display enhancements beside the runtime.
+# Ship Tomba 2's trusted, game-owned mods beside the runtime.
 # The authentic 4:3/non-interpolated presentation remains the disabled baseline.
 set(TOMBA2_PRELOADED_MODS "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded")
 if(EXISTS "${TOMBA2_PRELOADED_MODS}/packages")
@@ -80,6 +80,20 @@ if(EXISTS "${TOMBA2_PRELOADED_MODS}/packages")
 endif()
 
 if(BUILD_TESTING)
+    add_executable(tomba2_first_person_controls_test
+        tests/test_first_person_controls.c
+    )
+    target_include_directories(tomba2_first_person_controls_test PRIVATE
+        "${PSXRECOMP_ROOT}/runtime/include"
+    )
+    if(NOT MSVC)
+        target_link_libraries(tomba2_first_person_controls_test PRIVATE m)
+    endif()
+    add_test(
+        NAME tomba2_first_person_controls_test
+        COMMAND "$<TARGET_FILE:tomba2_first_person_controls_test>"
+    )
+
     add_executable(tomba2_preloaded_mods_test
         tests/test_preloaded_mods.cpp
         "${PSXRECOMP_ROOT}/runtime/src/mod_packages.cpp"

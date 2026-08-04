@@ -1,0 +1,59 @@
+format_version = 5
+id = "tomba2.experimental.first-person"
+version = "1.0.0"
+name = "First-Person Camera"
+author = "mstan"
+description = "Select-toggled first-person experiment using Tomba 2's original 3D renderer, camera controller, and path-constrained movement."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94454"
+disc_sha256 = "8e9568388155787384c3166a5934a495fbff3fa57154ab0489b0f214fe05a8ab"
+
+[[feature]]
+id = "first-person"
+name = "First-Person Camera (Experimental)"
+description = "Press Select during normal gameplay to place the camera at Tomba's head and enable camera-relative movement. Tomba's action buttons and scripted cameras remain game-owned."
+group = "Gameplay"
+default_enabled = false
+
+[[plugin]]
+feature = "first-person"
+id = "tomba2.camera.first-person"
+
+[[option]]
+feature = "first-person"
+id = "eye-height"
+label = "Eye height"
+description = "Camera height above Tomba's path position in game world units."
+group = "Camera"
+type = "integer"
+default = 224
+min = 96
+max = 320
+step = 16
+
+[[option]]
+feature = "first-person"
+id = "forward-offset"
+label = "Forward offset"
+description = "Moves the camera ahead of Tomba's model to reduce near-plane clipping."
+group = "Camera"
+type = "integer"
+default = 32
+min = 0
+max = 160
+step = 16
+
+[[option]]
+feature = "first-person"
+id = "turn-speed"
+label = "Turn speed"
+description = "Horizontal camera turn speed in the game's 4096-unit angle space."
+group = "Controls"
+type = "integer"
+default = 32
+min = 8
+max = 128
+step = 8

@@ -26,10 +26,10 @@ BIOS is required: select your legally obtained Tomba! 2 disc image in the
 launcher and press Launch. The optional BIOS row accepts the exact supported
 retail dump; clear it to return to bundled OpenBIOS.
 
-Tomba 2's widescreen, temporal-frame-blending, and Skip FMVs enhancements live
-on the launcher's **Mods** page. They are disabled by default, leaving the
-authentic 4:3/non-interpolated presentation with real-time movies as the
-baseline.
+Tomba 2's widescreen, temporal-frame-blending, Skip FMVs, and first-person
+experiments live on the launcher's **Mods** page. They are disabled by default,
+leaving the authentic 4:3/non-interpolated presentation with real-time movies
+and stock camera as the baseline.
 
 ## Layout
 
@@ -78,6 +78,22 @@ trails. This is temporal blending, not motion-vector frame generation.
 **Skip FMVs** mutes and rapidly advances streamed XA/MDEC movies plus the
 silent, RAM-preloaded Whoopee Camp logo. The game still runs its normal movie
 completion and teardown path.
+
+**First-Person Camera (Experimental)** places the camera at Tomba's live
+position and reinterprets plain directional traversal for a first-person
+layout. It starts in the stock third-person view; press Select to enter even
+during an interaction such as holding a pig. Exiting waits briefly for Tomba's
+physical position to stabilize so a moving platform is not interrupted:
+Up walks forward along the nearest authored path direction, Down turns the
+view around and walks forward the opposite way, and Left/Right rotate the
+camera without moving Tomba. L1/R1 send the game's original Up/Down context
+inputs. Face-button interaction chords and their D-pad directions pass through
+unchanged for stock side/depth actions; Jump+Up retains the action button while
+using first-person forward movement, so jumping onto pigs remains on the
+normal capture path. Camera and traversal controls change together on the same
+transition. The game remains a path-constrained 2.5D platformer underneath,
+and scripted cameras take priority, so expect some clipping in this
+deliberately limited experiment.
 
 ## License
 

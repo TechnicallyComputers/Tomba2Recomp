@@ -256,8 +256,8 @@ if (-not (Test-Path (Join-Path $ModsSrc "packages"))) {
 }
 Copy-TreeTo $ModsSrc (Join-Path $Stage "mods")
 $modManifestCount = (Get-ChildItem (Join-Path $Stage "mods/packages") -Recurse -Filter manifest.toml).Count
-if ($modManifestCount -ne 3) {
-    throw "Expected three Tomba 2 preloaded mod manifests, found $modManifestCount"
+if ($modManifestCount -ne 5) {
+    throw "Expected 5 mod manifests (3 game-owned + 2 framework loading-speed), found $modManifestCount"
 }
 Write-Host "Bundled Tomba 2 mod catalog: $modManifestCount package(s)"
 

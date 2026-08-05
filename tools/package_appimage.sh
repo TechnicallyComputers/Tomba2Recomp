@@ -158,9 +158,13 @@ ensure_bios SCPH1001 SCPH1001.toml
 if [ "$skip_build" = "0" ]; then
     generator=Ninja
     command -v ninja >/dev/null 2>&1 || generator="Unix Makefiles"
+    # --build-id=none keeps the ELF a function of its sources: the default
+    # build-id is a hash that also folds in link-time inputs and makes two
+    # otherwise identical builds differ.
     cmake -S "$root" -B "$build_dir" -G "$generator" \
         -DCMAKE_BUILD_TYPE=Release \
-        -DPSX_DEBUG_TOOLS=OFF
+        -DPSX_DEBUG_TOOLS=OFF \
+        -DCMAKE_EXE_LINKER_FLAGS="-Wl,--build-id=none"
     cmake --build "$build_dir" --target psx-runtime -j "$jobs"
 fi
 

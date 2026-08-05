@@ -192,7 +192,16 @@ if ($SkipRegen) {
     if ($LASTEXITCODE -ne 0) { throw "game regen failed" }
 }
 
-Invoke-Native { cmake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF } "cmake configure"
+# --no-insert-timestamp: the MinGW linker stamps the current time into the PE
+# header, which is the only thing that stopped two runs of this packager from
+# producing a byte-identical exe (measured: exactly 2 differing bytes in an
+# 18 MB binary). Release builds want the artifact to be a function of its
+# sources, not of the clock.
+Invoke-Native {
+    cmake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release `
+        -DPSX_DEBUG_TOOLS=OFF `
+        "-DCMAKE_EXE_LINKER_FLAGS=-Wl,--no-insert-timestamp"
+} "cmake configure"
 Invoke-Native { cmake --build $BuildPath -j $Jobs } "cmake build"
 
 if (Test-Path -LiteralPath $StageRoot) {

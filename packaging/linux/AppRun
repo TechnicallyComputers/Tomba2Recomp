@@ -1,5 +1,6 @@
 #!/bin/sh
-# Tomba2Recomp AppImage entry point.
+# AppImage entry point. Tokens (@NAME@) are stamped by tools/package_appimage.sh
+# from packaging/release/app.conf, so this file is title-neutral.
 #
 # psxrecomp anchors settings, assets, saves, cache, and mods to argv[0]. Inside
 # an AppImage that anchor is a read-only squashfs mount, so everything writable
@@ -8,29 +9,29 @@
 set -eu
 
 if [ -z "${APPDIR:-}" ]; then
-    echo "Tomba2Recomp: APPDIR is not set; launch this through the AppImage runtime." >&2
+    echo "@APP_NAME@: APPDIR is not set; launch this through the AppImage runtime." >&2
     exit 1
 fi
 
-if [ -n "${TOMBA2_RECOMP_DATA_DIR:-}" ]; then
-    data_dir=$TOMBA2_RECOMP_DATA_DIR
+if [ -n "${@ENV_PREFIX@_DATA_DIR:-}" ]; then
+    data_dir=$@ENV_PREFIX@_DATA_DIR
 else
     if [ -n "${XDG_DATA_HOME:-}" ]; then
         data_home=$XDG_DATA_HOME
     elif [ -n "${HOME:-}" ]; then
         data_home=$HOME/.local/share
     else
-        echo "Tomba2Recomp: HOME is not set; set TOMBA2_RECOMP_DATA_DIR explicitly." >&2
+        echo "@APP_NAME@: HOME is not set; set @ENV_PREFIX@_DATA_DIR explicitly." >&2
         exit 1
     fi
-    data_dir=$data_home/Tomba2Recomp
+    data_dir=$data_home/@EXE_NAME@
 fi
 
-payload=$APPDIR/usr/share/tomba2recomp
-runtime=$APPDIR/usr/bin/Tomba2Recomp
+payload=$APPDIR/usr/share/@PAYLOAD_DIR@
+runtime=$APPDIR/usr/bin/@EXE_NAME@
 
 if [ ! -x "$runtime" ] || [ ! -f "$payload/game.toml" ]; then
-    echo "Tomba2Recomp: AppImage payload is incomplete." >&2
+    echo "@APP_NAME@: AppImage payload is incomplete." >&2
     exit 1
 fi
 
@@ -79,14 +80,14 @@ fi
 # marker never drifts from the artifact name.
 printf '%s\n' "@VERSION@" > "$data_dir/.appimage-layout-version"
 
-if [ "${TOMBA2_RECOMP_SEED_ONLY:-0}" = "1" ]; then
+if [ "${@ENV_PREFIX@_SEED_ONLY:-0}" = "1" ]; then
     printf '%s\n' "$data_dir"
     exit 0
 fi
 
-launcher=$data_dir/.Tomba2Recomp-runtime
+launcher=$data_dir/.@EXE_NAME@-runtime
 ln -sfn "$runtime" "$launcher"
-export TOMBA2_RECOMP_APPIMAGE_PATH=${APPIMAGE:-}
+export @ENV_PREFIX@_APPIMAGE_PATH=${APPIMAGE:-}
 unset APPIMAGE
 
 export PATH="$APPDIR/usr/bin${PATH:+:$PATH}"

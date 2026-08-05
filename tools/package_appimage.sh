@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# package_appimage.sh — build the Linux x86_64 AppImage release for Tomba2Recomp.
+# package_appimage.sh — build the Linux x86_64 AppImage release for a recomp title.
 #
 # Counterpart to tools/package_release.ps1 (Windows). Both packagers read the
 # SAME sources so the two platforms cannot drift:
@@ -78,6 +78,18 @@ fi
 [ -n "$version" ] || version=$(tr -d ' \t\r\n' < "$root/packaging/release/VERSION")
 [ -n "$version" ] || { echo "empty version" >&2; exit 1; }
 
+# Per-game identity (see packaging/release/app.conf). Everything below this
+# point is title-neutral, so porting this script to another title is a copy
+# plus that one file.
+app_conf=$root/packaging/release/app.conf
+[ -f "$app_conf" ] || { echo "missing $app_conf" >&2; exit 1; }
+# shellcheck source=/dev/null
+. "$app_conf"
+for v in APP_NAME EXE_NAME PAYLOAD_DIR DESKTOP_ID ENV_PREFIX ICON_SOURCE EXPECTED_MODS FRAMEWORK_DIR; do
+    eval "val=\${$v:-}"
+    [ -n "$val" ] || { echo "$app_conf does not set $v" >&2; exit 1; }
+done
+
 # --- path handling ---------------------------------------------------------
 # Accept Windows-style output paths so the same command works from a WSL shell
 # driven by a Windows tool.
@@ -105,25 +117,25 @@ stage_base=$build_dir
 case "$root" in
     /mnt/*)
         if [ "$is_wsl" = "1" ]; then
-            stage_base=${TMPDIR:-/tmp}/tomba2recomp-appimage.$$
+            stage_base=${TMPDIR:-/tmp}/$PAYLOAD_DIR-appimage.$$
             echo "WSL: repo is on a DrvFs mount; staging AppDir at $stage_base"
         fi;;
 esac
 appdir=$stage_base/AppDir
 tools_dir=${RECOMP_APPIMAGE_TOOLS:-"${XDG_CACHE_HOME:-$HOME/.cache}/recomp-appimage-tools"}
-output=$out_dir/Tomba2Recomp-$version-linux-x86_64.AppImage
+output=$out_dir/$EXE_NAME-$version-linux-x86_64.AppImage
 
 cleanup() {
     case "$stage_base" in
-        /tmp/tomba2recomp-appimage.*|"${TMPDIR:-/tmp}"/tomba2recomp-appimage.*)
+        /tmp/"$PAYLOAD_DIR"-appimage.*|"${TMPDIR:-/tmp}"/"$PAYLOAD_DIR"-appimage.*)
             rm -rf -- "$stage_base";;
     esac
 }
 trap cleanup EXIT
 
-if [ ! -f "$root/generated/SCUS_944.54_dispatch.c" ]; then
-    echo "Missing generated game sources (generated/SCUS_944.54_dispatch.c)." >&2
-    echo "Run the recompiler first: psxrecomp-v4/recompiler/build*/psxrecomp-game --config game.toml" >&2
+if [ -z "$(ls "$root"/generated/*_dispatch.c 2>/dev/null)" ]; then
+    echo "Missing generated game sources (generated/*_dispatch.c)." >&2
+    echo "Run the recompiler first: $FRAMEWORK_DIR/recompiler/build*/psxrecomp-game --config game.toml" >&2
     exit 1
 fi
 
@@ -148,7 +160,7 @@ echo "version=$version  SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
 # psxrecomp-v4/generated. A clean checkout has none, so generate the bundled
 # OpenBIOS (MIT, no dump required) and SCPH1001 when a dump is present, rather
 # than failing at cmake with a message about a script we could have run.
-fw=$root/psxrecomp-v4
+fw=$root/$FRAMEWORK_DIR
 # A CMake build directory records absolute paths and its generator's compiler,
 # so a tree configured by Windows cmake (F:/..., ninja.exe) cannot be reused
 # from WSL. Keep a Linux-only directory; never share build-t2 with Windows.
@@ -199,7 +211,7 @@ if [ "$skip_build" = "0" ]; then
     cmake --build "$build_dir" --target psx-runtime -j "$jobs"
 fi
 
-elf=$build_dir/Tomba2Recomp
+elf=$build_dir/$EXE_NAME
 [ -f "$elf" ] || elf=$build_dir/psx-runtime
 [ -f "$elf" ] || { echo "no runtime ELF under $build_dir" >&2; exit 1; }
 file -b "$elf" | grep -q ELF || { echo "$elf is not an ELF binary" >&2; exit 1; }
@@ -231,16 +243,19 @@ echo "game=$game_id  codegen tag=$cg_tag"
 
 # --- stage AppDir ----------------------------------------------------------
 rm -rf -- "$appdir"
-mkdir -p "$appdir/usr/bin" "$appdir/usr/share/tomba2recomp"
-payload=$appdir/usr/share/tomba2recomp
+mkdir -p "$appdir/usr/bin" "$appdir/usr/share/$PAYLOAD_DIR"
+payload=$appdir/usr/share/$PAYLOAD_DIR
 
-install -m 0755 "$elf" "$appdir/usr/bin/Tomba2Recomp"
+install -m 0755 "$elf" "$appdir/usr/bin/$EXE_NAME"
 
 # AppRun carries the version marker; stamp it rather than hardcoding.
-sed "s|@VERSION@|$version|g" "$root/packaging/linux/AppRun" > "$appdir/AppRun"
+sed -e "s|@VERSION@|$version|g" -e "s|@APP_NAME@|$APP_NAME|g" \
+    -e "s|@EXE_NAME@|$EXE_NAME|g" -e "s|@PAYLOAD_DIR@|$PAYLOAD_DIR|g" \
+    -e "s|@ENV_PREFIX@|$ENV_PREFIX|g" \
+    "$root/packaging/linux/AppRun" > "$appdir/AppRun"
 chmod 0755 "$appdir/AppRun"
-install -m 0644 "$root/packaging/linux/io.github.mstan.Tomba2Recomp.desktop" \
-    "$appdir/io.github.mstan.Tomba2Recomp.desktop"
+install -m 0644 "$root/packaging/linux/$DESKTOP_ID.desktop" \
+    "$appdir/$DESKTOP_ID.desktop"
 
 for tree in assets bios mods; do
     [ -d "$build_dir/$tree" ] || { echo "build did not stage $tree/" >&2; exit 1; }
@@ -249,8 +264,8 @@ done
 
 # The Mods page must never ship empty: assert the three preloaded packages.
 mod_manifests=$(find "$payload/mods" -name manifest.toml | wc -l)
-if [ "$mod_manifests" -ne 3 ]; then
-    echo "expected 3 preloaded mod manifests, found $mod_manifests" >&2
+if [ "$mod_manifests" -ne "$EXPECTED_MODS" ]; then
+    echo "expected $EXPECTED_MODS preloaded mod manifests, found $mod_manifests" >&2
     exit 1
 fi
 
@@ -259,8 +274,8 @@ fi
 [ -f "$payload/bios/OpenBIOS.LICENSE" ] || { echo "missing OpenBIOS notice" >&2; exit 1; }
 
 mkdir -p "$payload/licenses"
-if [ -f "$root/psxrecomp-v4/runtime/licenses/libchdr-NOTICES.txt" ]; then
-    cp "$root/psxrecomp-v4/runtime/licenses/libchdr-NOTICES.txt" "$payload/licenses/"
+if [ -f "$fw/runtime/licenses/libchdr-NOTICES.txt" ]; then
+    cp "$fw/runtime/licenses/libchdr-NOTICES.txt" "$payload/licenses/"
 fi
 
 # --- prebuilt overlay cache ------------------------------------------------
@@ -296,10 +311,10 @@ shards are .so under gcc/linux-x64:
 
   PSX_OVERLAY_CACHE_DIR="$root/build-linux-cache/cache" \\
   PSX_OVERLAY_CAPTURES="<coverage vault>/overlay_captures.json" \\
-  python3 psxrecomp-v4/tools/compile_overlays.py \\
+  python3 $FRAMEWORK_DIR/tools/compile_overlays.py \\
       --game-toml _release_game.toml \\
-      --recompiler psxrecomp-v4/recompiler/build-linux/psxrecomp-game \\
-      --runtime-include psxrecomp-v4/runtime/include --gcc \$(command -v gcc)
+      --recompiler $FRAMEWORK_DIR/recompiler/build-linux/psxrecomp-game \\
+      --runtime-include $FRAMEWORK_DIR/runtime/include --gcc \$(command -v gcc)
 
 Then re-run this script. Pass --allow-no-cache to ship without one anyway.
 EOF
@@ -313,15 +328,15 @@ cp "$root/LICENSE" "$root/README.md" "$payload/"
 
 # recomp-ui resolves fonts/textures through SDL_GetBasePath(), which points at
 # the real ELF inside the mount rather than psxrecomp's writable argv[0] anchor.
-ln -s ../share/tomba2recomp/assets "$appdir/usr/bin/assets"
+ln -s "../share/$PAYLOAD_DIR/assets" "$appdir/usr/bin/assets"
 
 if command -v magick >/dev/null 2>&1; then image_tool=magick
 elif command -v convert >/dev/null 2>&1; then image_tool=convert
 else echo "ImageMagick is required for the AppImage icon." >&2; exit 1; fi
-"$image_tool" "$root/recomp/launcher/boxart.tga" \
+"$image_tool" "$root/$ICON_SOURCE" \
     -resize 240x240 -background transparent -gravity center -extent 256x256 \
-    "$appdir/io.github.mstan.Tomba2Recomp.png"
-ln -s io.github.mstan.Tomba2Recomp.png "$appdir/.DirIcon"
+    "$appdir/$DESKTOP_ID.png"
+ln -s "$DESKTOP_ID.png" "$appdir/.DirIcon"
 
 # --- pinned tooling --------------------------------------------------------
 linuxdeploy_url=https://github.com/linuxdeploy/linuxdeploy/releases/download/continuous/linuxdeploy-x86_64.AppImage
@@ -347,9 +362,9 @@ fetch_tool "$appimagetool_url" "$appimagetool_sha" "$appimagetool"
 export NO_STRIP=1
 "$linuxdeploy" --appimage-extract-and-run \
     --appdir "$appdir" \
-    --executable "$appdir/usr/bin/Tomba2Recomp" \
-    --desktop-file "$appdir/io.github.mstan.Tomba2Recomp.desktop" \
-    --icon-file "$appdir/io.github.mstan.Tomba2Recomp.png"
+    --executable "$appdir/usr/bin/$EXE_NAME" \
+    --desktop-file "$appdir/$DESKTOP_ID.desktop" \
+    --icon-file "$appdir/$DESKTOP_ID.png"
 
 # Normalise mtimes so the squashfs image is byte-stable across runs.
 find "$appdir" -exec touch -h -d "@$SOURCE_DATE_EPOCH" {} + 2>/dev/null || true

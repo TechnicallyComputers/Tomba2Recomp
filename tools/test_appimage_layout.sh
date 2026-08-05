@@ -53,11 +53,17 @@ if [ "$seeded_so" -eq 0 ]; then
     echo "seeded cache holds no .so shards" >&2
     fail=1
 fi
-if find "$data_dir/cache" -name '*.dll' | grep -q .; then
-    echo "seeded cache contains Windows .dll shards; the Linux loader cannot use them" >&2
+# Count rather than pipe into `grep -q`: grep exits on its first match and
+# SIGPIPEs find, and under `set -o pipefail` that makes the whole pipeline
+# report failure -- so a NEGATED grep -q test fires precisely when the thing
+# it is looking for IS present. That false alarm cost a debug cycle here.
+stray_dll=$(find "$data_dir/cache" -name '*.dll' | wc -l)
+if [ "$stray_dll" -ne 0 ]; then
+    echo "seeded cache contains $stray_dll Windows .dll shards; the Linux loader cannot use them" >&2
     fail=1
 fi
-if [ "$seeded_so" -gt 0 ] && ! find "$data_dir/cache" -path '*/linux-x64/*' -name '*.so' | grep -q .; then
+arch_so=$(find "$data_dir/cache" -path '*/linux-x64/*' -name '*.so' | wc -l)
+if [ "$seeded_so" -gt 0 ] && [ "$arch_so" -eq 0 ]; then
     echo "cache .so shards are not under a linux-x64 arch-abi directory" >&2
     fail=1
 fi

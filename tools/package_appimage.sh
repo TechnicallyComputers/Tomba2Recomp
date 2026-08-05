@@ -126,6 +126,7 @@ tools_dir=${RECOMP_APPIMAGE_TOOLS:-"${XDG_CACHE_HOME:-$HOME/.cache}/recomp-appim
 output=$out_dir/$EXE_NAME-$version-linux-x86_64.AppImage
 
 cleanup() {
+    [ -n "${derived_toml:-}" ] && rm -f -- "$derived_toml"
     case "$stage_base" in
         /tmp/"$PAYLOAD_DIR"-appimage.*|"${TMPDIR:-/tmp}"/"$PAYLOAD_DIR"-appimage.*)
             rm -rf -- "$stage_base";;
@@ -216,19 +217,44 @@ elf=$build_dir/$EXE_NAME
 [ -f "$elf" ] || { echo "no runtime ELF under $build_dir" >&2; exit 1; }
 file -b "$elf" | grep -q ELF || { echo "$elf is not an ELF binary" >&2; exit 1; }
 
+# --- player game.toml ------------------------------------------------------
+# Two conventions exist across the titles and both are honoured:
+#   packaging/release/game.toml present -> ship it verbatim (Tomba 2: a
+#       curated player config, deliberately smaller than the dev one)
+#   absent -> derive from the repo's real game.toml by cutting the dev-only
+#       audit block (Ape Escape: one source of truth, so the shipped config
+#       cannot drift from the config that was validated)
+# The codegen tag is computed from whichever file results, so the bundled
+# cache always matches what the player actually runs.
+player_toml=$root/packaging/release/game.toml
+derived_toml=""
+if [ ! -f "$player_toml" ]; then
+    [ -f "$root/game.toml" ] || { echo "no packaging/release/game.toml and no game.toml" >&2; exit 1; }
+    derived_toml=${TMPDIR:-/tmp}/player-game.$$.toml
+    awk '
+        /Audit-specific/ { exit }
+        /^\[audit\]/     { exit }
+        { print }
+    ' "$root/game.toml" > "$derived_toml"
+    # Drop a trailing run of blank/comment lines left by the cut.
+    sed -i -e :a -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$derived_toml"
+    player_toml=$derived_toml
+    echo "player game.toml derived from game.toml (audit block stripped)"
+fi
+
 # --- release identity: game id + codegen tag -------------------------------
 # The cache namespace the loader will read is <game_id>/gcc/<arch-abi>/<cg_tag>.
 # Compute the tag exactly the way compile_overlays.py and the Windows packager
 # do -- from the runtime includes plus the PACKAGED game.toml, so a cache built
 # against the dev config (a different tag) is never mistaken for a usable one.
 game_id=$(sed -n 's/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
-    "$root/packaging/release/game.toml" | head -1)
-[ -n "$game_id" ] || { echo "could not read [game] id from packaging/release/game.toml" >&2; exit 1; }
+    "$player_toml" | head -1)
+[ -n "$game_id" ] || { echo "could not read [game] id from $player_toml" >&2; exit 1; }
 
 recompiler_bin=$fw/$bios_build/psxrecomp-game
 [ -x "$recompiler_bin" ] || recompiler_bin=$fw/recompiler/build-linux/psxrecomp-game
 cg_tag=$(python3 - "$fw/tools/compile_overlays.py" "$fw/runtime/include" \
-                   "$recompiler_bin" "$root/packaging/release/game.toml" <<'PY'
+                   "$recompiler_bin" "$player_toml" <<'PY'
 import importlib.util, os, sys
 mod_path, inc, exe, gt = sys.argv[1:5]
 spec = importlib.util.spec_from_file_location('co', mod_path)
@@ -321,7 +347,7 @@ EOF
     exit 1
 fi
 
-cp "$root/packaging/release/game.toml"      "$payload/game.toml"
+cp "$player_toml" "$payload/game.toml"
 cp "$root/packaging/release/input.ini"      "$payload/input.ini"
 cp "$root/packaging/release/START_HERE.txt" "$payload/START_HERE.txt"
 cp "$root/LICENSE" "$root/README.md" "$payload/"

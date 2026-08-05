@@ -37,6 +37,10 @@ set -euo pipefail
 
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 
+# Keep the original argv: the parse loop below shifts it away, and the
+# low-priority re-exec has to pass the caller's arguments through intact.
+orig_args=("$@")
+
 version=""
 out_dir=""
 skip_build=0
@@ -50,10 +54,21 @@ while [ $# -gt 0 ]; do
         --build-dir) build_dir=$2; shift 2;;
         --jobs)    jobs=$2; shift 2;;
         --skip-build) skip_build=1; shift;;
+        --nice) nice_level=$2; shift 2;;
         -h|--help) sed -n '2,36p' "$0"; exit 0;;
         *) echo "unknown arg: $1" >&2; exit 2;;
     esac
 done
+
+# Packaging a release should not make the machine unusable. Re-exec the whole
+# script under `nice` once (children inherit it) unless already niced or told
+# otherwise with --nice 0.
+nice_level=${nice_level:-10}
+if [ "$nice_level" -gt 0 ] && [ "${RECOMP_APPIMAGE_RENICED:-0}" != "1" ] \
+   && command -v nice >/dev/null 2>&1; then
+    export RECOMP_APPIMAGE_RENICED=1
+    exec nice -n "$nice_level" "$0" ${orig_args[@]+"${orig_args[@]}"}
+fi
 
 [ -n "$version" ] || version=$(tr -d ' \t\r\n' < "$root/packaging/release/VERSION")
 [ -n "$version" ] || { echo "empty version" >&2; exit 1; }
@@ -113,6 +128,31 @@ if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
 fi
 export SOURCE_DATE_EPOCH
 echo "version=$version  SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
+
+# --- BIOS backends ---------------------------------------------------------
+# The runtime will not configure without at least one recompiled BIOS under
+# psxrecomp-v4/generated. A clean checkout has none, so generate the bundled
+# OpenBIOS (MIT, no dump required) and SCPH1001 when a dump is present, rather
+# than failing at cmake with a message about a script we could have run.
+fw=$root/psxrecomp-v4
+bios_build=${PSXRECOMP_BIOS_BUILD:-recompiler/build-t2}
+if [ ! -x "$fw/$bios_build/psxrecomp-bios" ] && [ ! -x "$fw/$bios_build/psxrecomp-bios.exe" ]; then
+    bios_build=recompiler/build
+fi
+ensure_bios() {
+    stem=$1; profile=$2
+    [ -f "$fw/bios/$profile" ] || return 0
+    [ -f "$fw/generated/${stem}_dispatch.c" ] && return 0
+    echo "Generating recompiled BIOS backend: $stem"
+    ( cd "$fw" && PSXRECOMP_BIOS_BUILD="$bios_build" tools/regen_bios.sh --config "bios/$profile" )
+}
+if [ ! -x "$fw/$bios_build/psxrecomp-bios" ] && [ ! -f "$fw/generated/OpenBIOS_dispatch.c" ]; then
+    cmake -S "$fw/recompiler" -B "$fw/$bios_build" -G "$(command -v ninja >/dev/null 2>&1 && echo Ninja || echo 'Unix Makefiles')" \
+        -DCMAKE_BUILD_TYPE=Release
+    cmake --build "$fw/$bios_build" --target psxrecomp-bios -j "$jobs"
+fi
+ensure_bios OpenBIOS OpenBIOS.toml
+ensure_bios SCPH1001 SCPH1001.toml
 
 # --- build -----------------------------------------------------------------
 if [ "$skip_build" = "0" ]; then

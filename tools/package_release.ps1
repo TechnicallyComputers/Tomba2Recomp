@@ -11,7 +11,14 @@ param(
     # Use when the runtime changed but codegen did not: regenerating with a
     # newer emitter would swap in code the release validation never ran
     # (decoder/emitter changes require a fresh user playthrough).
-    [switch]$SkipRegen
+    [switch]$SkipRegen,
+    # Parallel compile jobs. 0 = every logical core. Packaging a release should
+    # not make the machine unusable, so this is tunable and pairs with
+    # -LowPriority.
+    [int]$Jobs = 0,
+    # Run the whole packaging run (and therefore every cmake/ninja/gcc child it
+    # spawns, since priority is inherited) below normal priority.
+    [switch]$LowPriority
 )
 
 $ErrorActionPreference = "Stop"
@@ -33,7 +40,16 @@ $ZipPath = Join-Path $Root ("Tomba2Recomp-{0}-windows-x64.zip" -f $Version)
 $MingwBin = "C:\msys64\mingw64\bin"
 
 $env:PATH = "$MingwBin;$env:PATH"
-Write-Host "Packaging Tomba2Recomp $Version"
+
+if ($Jobs -le 0) { $Jobs = [int]$env:NUMBER_OF_PROCESSORS }
+if ($LowPriority) {
+    # Child processes inherit the priority class, so setting it once here
+    # covers cmake, ninja, every gcc, and the MSYS bash used for regen_bios.
+    [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass =
+        [System.Diagnostics.ProcessPriorityClass]::BelowNormal
+}
+Write-Host ("Packaging Tomba2Recomp {0} (jobs={1}, priority={2})" -f `
+    $Version, $Jobs, [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass)
 
 # ---- Path helpers ---------------------------------------------------------
 # PowerShell's Copy-Item decides "is the destination a file or a directory?"
@@ -53,7 +69,10 @@ function New-Dir {
         throw "Expected a directory but a file exists at: $Path"
     }
     if (-not (Test-Path -LiteralPath $Path)) {
-        New-Item -ItemType Directory -Force -LiteralPath $Path | Out-Null
+        # Windows PowerShell 5.1's New-Item has no -LiteralPath, so its -Path
+        # still glob-expands. Create through .NET instead: literal by
+        # definition, and it makes intermediate directories.
+        [System.IO.Directory]::CreateDirectory($Path) | Out-Null
     }
     return $Path
 }
@@ -110,10 +129,62 @@ function Invoke-Native {
     if ($code -ne 0) { throw "$What failed (exit $code)" }
 }
 
+# ---- BIOS backends --------------------------------------------------------
+# The runtime refuses to configure without at least one recompiled BIOS in
+# psxrecomp-v4/generated (the require-generated guard). A clean checkout has
+# none, so a "clone and run the packager" path fails at cmake with a message
+# about a script the packager could simply have run. Generate the bundled
+# OpenBIOS (MIT, no dump needed) and, when a retail dump is present, SCPH1001.
+function Ensure-BiosBackends {
+    param([Parameter(Mandatory)][string]$FrameworkRoot)
+    $stems = @()
+    if (Test-Path -LiteralPath (Join-Path $FrameworkRoot "bios\OpenBIOS.toml")) {
+        $stems += ,@("OpenBIOS", "bios/OpenBIOS.toml")
+    }
+    if (Test-Path -LiteralPath (Join-Path $FrameworkRoot "bios\SCPH1001.BIN")) {
+        $stems += ,@("SCPH1001", "bios/SCPH1001.toml")
+    }
+    if (-not $stems) { throw "No BIOS profile available under $FrameworkRoot\bios" }
+
+    $missing = @($stems | Where-Object {
+        -not (Test-Path -LiteralPath (Join-Path $FrameworkRoot ("generated\{0}_dispatch.c" -f $_[0])))
+    })
+    if (-not $missing) { return }
+
+    $bash = $null
+    foreach ($cand in @("C:\msys64\usr\bin\bash.exe", "C:\msys64\mingw64\bin\bash.exe")) {
+        if (Test-Path -LiteralPath $cand) { $bash = $cand; break }
+    }
+    if (-not $bash) {
+        throw ("Missing recompiled BIOS backend(s): {0}. Install MSYS2 or run " +
+               "psxrecomp-v4/tools/regen_bios.sh manually." -f (($missing | ForEach-Object { $_[0] }) -join ', '))
+    }
+    # MSYS bash needs a POSIX path; cygpath is the supported converter and
+    # handles drive letters and spaces that a naive string replace would not.
+    $cygpath = Join-Path (Split-Path -Parent $bash) "cygpath.exe"
+    $posixRoot = (& $cygpath -u $FrameworkRoot).Trim()
+    # A login shell (-l) rebuilds PATH from /etc/profile, which drops the
+    # MinGW toolchain, so regen_bios.sh cannot find cmake. Use a non-login
+    # shell and prepend the same compiler directory this script already uses,
+    # converted with cygpath rather than by rewriting the drive letter.
+    $posixMingw = (& $cygpath -u $MingwBin).Trim()
+    foreach ($stem in $missing) {
+        Write-Host "Generating recompiled BIOS backend: $($stem[0])"
+        # Name this anything but $cmd: PowerShell variables are case-insensitive,
+        # so a $cmd here binds to Invoke-Native's own [scriptblock]$Cmd parameter
+        # when the scriptblock runs, and bash receives the scriptblock's source
+        # text instead of the command.
+        $biosShellCmd = "export PATH='$posixMingw':`$PATH; cd '$posixRoot' && " +
+                        "PSXRECOMP_BIOS_BUILD=recompiler/build-t2 tools/regen_bios.sh --config $($stem[1])"
+        Invoke-Native { & $bash -c $biosShellCmd } "regen_bios ($($stem[0]))"
+    }
+}
+
 # Framework via THIS repo's junction (psxrecomp-v4), so the release always
 # builds against the pinned framework tree, never a sibling checkout.
 $RecompDir = Resolve-Path (Join-Path $Root "psxrecomp-v4\recompiler\build-t2")
-Invoke-Native { cmake --build $RecompDir --target psxrecomp-game -j $env:NUMBER_OF_PROCESSORS } "recompiler build"
+Invoke-Native { cmake --build $RecompDir --target psxrecomp-game -j $Jobs } "recompiler build"
+Ensure-BiosBackends -FrameworkRoot (Join-Path $Root "psxrecomp-v4")
 if ($SkipRegen) {
     Write-Host "SkipRegen: shipping checked-in generated/ code (validated bits) without regeneration"
 } else {
@@ -122,7 +193,7 @@ if ($SkipRegen) {
 }
 
 Invoke-Native { cmake -S $Root -B $BuildPath -G Ninja -DCMAKE_BUILD_TYPE=Release -DPSX_DEBUG_TOOLS=OFF } "cmake configure"
-Invoke-Native { cmake --build $BuildPath -j $env:NUMBER_OF_PROCESSORS } "cmake build"
+Invoke-Native { cmake --build $BuildPath -j $Jobs } "cmake build"
 
 if (Test-Path -LiteralPath $StageRoot) {
     Remove-Item -LiteralPath $StageRoot -Recurse -Force

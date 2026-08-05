@@ -124,7 +124,16 @@ fi
 
 # --- reproducibility anchor ------------------------------------------------
 if [ -z "${SOURCE_DATE_EPOCH:-}" ]; then
-    SOURCE_DATE_EPOCH=$(git -C "$root" log -1 --format=%ct 2>/dev/null || echo 0)
+    # A git worktree checked out by Windows stores an absolute Windows gitdir
+    # path in .git, which WSL's git cannot follow ("not a git repository:
+    # /mnt/f/...F:/..."), so this legitimately fails here. Fall back to the
+    # VERSION file's mtime and say so, rather than silently stamping epoch 0.
+    SOURCE_DATE_EPOCH=$(git -C "$root" log -1 --format=%ct 2>/dev/null || true)
+    if [ -z "$SOURCE_DATE_EPOCH" ]; then
+        SOURCE_DATE_EPOCH=$(stat -c %Y "$root/packaging/release/VERSION" 2>/dev/null || echo 0)
+        echo "note: git date unavailable here; SOURCE_DATE_EPOCH from packaging/release/VERSION mtime." >&2
+        echo "      Pass SOURCE_DATE_EPOCH explicitly to pin it across machines." >&2
+    fi
 fi
 export SOURCE_DATE_EPOCH
 echo "version=$version  SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
@@ -135,24 +144,41 @@ echo "version=$version  SOURCE_DATE_EPOCH=$SOURCE_DATE_EPOCH"
 # OpenBIOS (MIT, no dump required) and SCPH1001 when a dump is present, rather
 # than failing at cmake with a message about a script we could have run.
 fw=$root/psxrecomp-v4
-bios_build=${PSXRECOMP_BIOS_BUILD:-recompiler/build-t2}
-if [ ! -x "$fw/$bios_build/psxrecomp-bios" ] && [ ! -x "$fw/$bios_build/psxrecomp-bios.exe" ]; then
-    bios_build=recompiler/build
-fi
-ensure_bios() {
-    stem=$1; profile=$2
-    [ -f "$fw/bios/$profile" ] || return 0
-    [ -f "$fw/generated/${stem}_dispatch.c" ] && return 0
-    echo "Generating recompiled BIOS backend: $stem"
-    ( cd "$fw" && PSXRECOMP_BIOS_BUILD="$bios_build" tools/regen_bios.sh --config "bios/$profile" )
+# A CMake build directory records absolute paths and its generator's compiler,
+# so a tree configured by Windows cmake (F:/..., ninja.exe) cannot be reused
+# from WSL. Keep a Linux-only directory; never share build-t2 with Windows.
+bios_build=${PSXRECOMP_BIOS_BUILD:-recompiler/build-linux}
+
+# Generate a backend only when its ROM is actually present. Gating on the
+# profile .toml instead would try to recompile SCPH1001 on any checkout, since
+# the profile ships even when the dump does not.
+bios_rom_for() {
+    case "$1" in
+        OpenBIOS) printf '%s\n' "$fw/bios/openbios.bin";;
+        *)        printf '%s\n' "$fw/bios/$1.BIN";;
+    esac
 }
-if [ ! -x "$fw/$bios_build/psxrecomp-bios" ] && [ ! -f "$fw/generated/OpenBIOS_dispatch.c" ]; then
-    cmake -S "$fw/recompiler" -B "$fw/$bios_build" -G "$(command -v ninja >/dev/null 2>&1 && echo Ninja || echo 'Unix Makefiles')" \
-        -DCMAKE_BUILD_TYPE=Release
-    cmake --build "$fw/$bios_build" --target psxrecomp-bios -j "$jobs"
+needed_stems=""
+for stem in OpenBIOS SCPH1001; do
+    [ -f "$fw/bios/$stem.toml" ] || continue
+    [ -f "$(bios_rom_for "$stem")" ] || continue
+    [ -f "$fw/generated/${stem}_dispatch.c" ] && continue
+    needed_stems="$needed_stems $stem"
+done
+
+if [ -n "$needed_stems" ]; then
+    if [ ! -x "$fw/$bios_build/psxrecomp-bios" ]; then
+        gen=Ninja
+        command -v ninja >/dev/null 2>&1 || gen="Unix Makefiles"
+        cmake -S "$fw/recompiler" -B "$fw/$bios_build" -G "$gen" -DCMAKE_BUILD_TYPE=Release
+        cmake --build "$fw/$bios_build" --target psxrecomp-bios -j "$jobs"
+    fi
+    for stem in $needed_stems; do
+        echo "Generating recompiled BIOS backend: $stem"
+        ( cd "$fw" && PSXRECOMP_BIOS_BUILD="$bios_build" \
+            tools/regen_bios.sh --config "bios/$stem.toml" )
+    done
 fi
-ensure_bios OpenBIOS OpenBIOS.toml
-ensure_bios SCPH1001 SCPH1001.toml
 
 # --- build -----------------------------------------------------------------
 if [ "$skip_build" = "0" ]; then

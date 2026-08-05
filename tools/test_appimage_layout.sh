@@ -45,6 +45,23 @@ if [ "$manifests" -ne 3 ]; then
     fail=1
 fi
 
+# The bundled overlay cache must arrive as Linux .so shards under
+# gcc/linux-x64; a .dll here would mean the Windows cache was staged and the
+# loader (which dlopen()s OVERLAY_SHARED_EXT) would ignore every one of them.
+seeded_so=$(find "$data_dir/cache" -name '*.so' 2>/dev/null | wc -l)
+if [ "$seeded_so" -eq 0 ]; then
+    echo "seeded cache holds no .so shards" >&2
+    fail=1
+fi
+if find "$data_dir/cache" -name '*.dll' | grep -q .; then
+    echo "seeded cache contains Windows .dll shards; the Linux loader cannot use them" >&2
+    fail=1
+fi
+if [ "$seeded_so" -gt 0 ] && ! find "$data_dir/cache" -path '*/linux-x64/*' -name '*.so' | grep -q .; then
+    echo "cache .so shards are not under a linux-x64 arch-abi directory" >&2
+    fail=1
+fi
+
 # A retail BIOS or disc image must never be inside the payload.
 stray=$(find "$data_dir" \( -iname 'SCPH*.BIN' -o -iname '*.cue' -o -iname '*.iso' \
         -o -iname '*.mcd' \) -print 2>/dev/null || true)
@@ -57,6 +74,17 @@ fi
 # Seeding must be idempotent: a second run must not fail or duplicate.
 TOMBA2_RECOMP_DATA_DIR="$work/data" TOMBA2_RECOMP_SEED_ONLY=1 \
     "$appimage" --appimage-extract-and-run >/dev/null
+
+# A shard the player's own session built must survive a reseed: AppRun seeds
+# the cache with cp -n, so release shards fill gaps without overwriting.
+user_shard=$data_dir/cache/.user-shard-probe
+printf 'player-built\n' > "$user_shard"
+TOMBA2_RECOMP_DATA_DIR="$work/data" TOMBA2_RECOMP_SEED_ONLY=1 \
+    "$appimage" --appimage-extract-and-run >/dev/null
+if [ ! -f "$user_shard" ] || [ "$(cat "$user_shard")" != "player-built" ]; then
+    echo "reseed destroyed a player-built cache entry" >&2
+    fail=1
+fi
 
 # User-owned files must survive a reseed.
 echo "; user edit" >> "$data_dir/input.ini"

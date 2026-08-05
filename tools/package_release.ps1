@@ -12,13 +12,17 @@ param(
     # newer emitter would swap in code the release validation never ran
     # (decoder/emitter changes require a fresh user playthrough).
     [switch]$SkipRegen,
-    # Parallel compile jobs. 0 = every logical core. Packaging a release should
-    # not make the machine unusable, so this is tunable and pairs with
-    # -LowPriority.
+    # Parallel compile jobs. 0 = leave two cores for the rest of the machine.
+    # Packaging a release must not make the box unusable.
     [int]$Jobs = 0,
-    # Run the whole packaging run (and therefore every cmake/ninja/gcc child it
-    # spawns, since priority is inherited) below normal priority.
-    [switch]$LowPriority
+    # Packaging runs below normal priority BY DEFAULT (every cmake/ninja/gcc
+    # child inherits it). Pass -NormalPriority when you want the machine's
+    # full attention.
+    [switch]$NormalPriority,
+    # Ship without a bundled overlay cache. Off by default: a cache-less
+    # package makes every player's first session run overlays interpreted, so
+    # it has to be asked for rather than warned about.
+    [switch]$AllowNoCache
 )
 
 $ErrorActionPreference = "Stop"
@@ -41,8 +45,10 @@ $MingwBin = "C:\msys64\mingw64\bin"
 
 $env:PATH = "$MingwBin;$env:PATH"
 
-if ($Jobs -le 0) { $Jobs = [int]$env:NUMBER_OF_PROCESSORS }
-if ($LowPriority) {
+if ($Jobs -le 0) {
+    $Jobs = [Math]::Max(2, [int]$env:NUMBER_OF_PROCESSORS - 2)
+}
+if (-not $NormalPriority) {
     # Child processes inherit the priority class, so setting it once here
     # covers cmake, ninja, every gcc, and the MSYS bash used for regen_bios.
     [System.Diagnostics.Process]::GetCurrentProcess().PriorityClass =
@@ -303,8 +309,30 @@ if (Test-Path $CacheSrc) {
     }
     $dllCount = (Get-ChildItem $CacheDst -Recurse -Filter *.dll).Count
     Write-Host "Bundled overlay cache: $dllCount native overlay DLL(s)"
+} elseif ($AllowNoCache) {
+    Write-Warning "No overlay cache at $CacheSrc - shipping without one because -AllowNoCache was given"
 } else {
-    Write-Warning "No overlay cache found at $CacheSrc - releasing without bundled cache"
+    # Shipping without a cache is a real downgrade for players: every overlay
+    # runs interpreted until their own cache fills. That must be a deliberate
+    # choice, not something a warning scrolls past during a release.
+    throw @"
+No overlay cache found at $CacheSrc, so this package would ship without one
+and every player's first session would run overlays interpreted.
+
+Build a cache for THIS release's codegen tag ($CgTag) - note the tag is
+derived from the packaged player game.toml, so a cache built against the dev
+game.toml lands under a different tag and will not be picked up:
+
+  `$env:PSX_OVERLAY_CACHE_DIR = "$Root\$CacheBuildDir\cache"
+  `$env:PSX_OVERLAY_CAPTURES  = "<coverage vault>\overlay_captures.json"
+  python psxrecomp-v4\tools\compile_overlays.py ``
+      --game-toml packaging\release\game.toml ``
+      --recompiler psxrecomp-v4\recompiler\build-t2\psxrecomp-game.exe ``
+      --runtime-include psxrecomp-v4\runtime\include ``
+      --gcc C:\msys64\mingw64\bin\gcc.exe
+
+Then re-run this packager. Pass -AllowNoCache to ship without one anyway.
+"@
 }
 
 # ---- Self-contained overlay toolchain (tcc tier) -------------------------

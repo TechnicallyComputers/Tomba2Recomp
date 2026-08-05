@@ -44,8 +44,12 @@ orig_args=("$@")
 version=""
 out_dir=""
 skip_build=0
+allow_no_cache=0
 build_dir=${BUILD_DIR:-"$root/build-appimage"}
-jobs=${BUILD_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}
+# Leave two cores for the rest of the machine; packaging must not make the box
+# unusable. Override with --jobs / BUILD_JOBS.
+_cores=$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)
+jobs=${BUILD_JOBS:-$(( _cores > 4 ? _cores - 2 : 2 ))}
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -54,6 +58,7 @@ while [ $# -gt 0 ]; do
         --build-dir) build_dir=$2; shift 2;;
         --jobs)    jobs=$2; shift 2;;
         --skip-build) skip_build=1; shift;;
+        --allow-no-cache) allow_no_cache=1; shift;;
         --nice) nice_level=$2; shift 2;;
         -h|--help) sed -n '2,36p' "$0"; exit 0;;
         *) echo "unknown arg: $1" >&2; exit 2;;
@@ -199,6 +204,31 @@ elf=$build_dir/Tomba2Recomp
 [ -f "$elf" ] || { echo "no runtime ELF under $build_dir" >&2; exit 1; }
 file -b "$elf" | grep -q ELF || { echo "$elf is not an ELF binary" >&2; exit 1; }
 
+# --- release identity: game id + codegen tag -------------------------------
+# The cache namespace the loader will read is <game_id>/gcc/<arch-abi>/<cg_tag>.
+# Compute the tag exactly the way compile_overlays.py and the Windows packager
+# do -- from the runtime includes plus the PACKAGED game.toml, so a cache built
+# against the dev config (a different tag) is never mistaken for a usable one.
+game_id=$(sed -n 's/^[[:space:]]*id[[:space:]]*=[[:space:]]*"\([^"]*\)".*/\1/p' \
+    "$root/packaging/release/game.toml" | head -1)
+[ -n "$game_id" ] || { echo "could not read [game] id from packaging/release/game.toml" >&2; exit 1; }
+
+recompiler_bin=$fw/$bios_build/psxrecomp-game
+[ -x "$recompiler_bin" ] || recompiler_bin=$fw/recompiler/build-linux/psxrecomp-game
+cg_tag=$(python3 - "$fw/tools/compile_overlays.py" "$fw/runtime/include" \
+                   "$recompiler_bin" "$root/packaging/release/game.toml" <<'PY'
+import importlib.util, os, sys
+mod_path, inc, exe, gt = sys.argv[1:5]
+spec = importlib.util.spec_from_file_location('co', mod_path)
+m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+print('cg%d_%08x_gc%08x' % (m.codegen_ver(inc), m.codegen_hash(inc),
+                            m.overlay_config_hash(os.path.abspath(exe),
+                                                  os.path.abspath(gt))))
+PY
+)
+[ -n "$cg_tag" ] || { echo "could not compute codegen tag" >&2; exit 1; }
+echo "game=$game_id  codegen tag=$cg_tag"
+
 # --- stage AppDir ----------------------------------------------------------
 rm -rf -- "$appdir"
 mkdir -p "$appdir/usr/bin" "$appdir/usr/share/tomba2recomp"
@@ -231,6 +261,49 @@ fi
 mkdir -p "$payload/licenses"
 if [ -f "$root/psxrecomp-v4/runtime/licenses/libchdr-NOTICES.txt" ]; then
     cp "$root/psxrecomp-v4/runtime/licenses/libchdr-NOTICES.txt" "$payload/licenses/"
+fi
+
+# --- prebuilt overlay cache ------------------------------------------------
+# Parity with the Windows packager: without a bundled cache every overlay runs
+# interpreted until the player's own cache fills. Linux shards are .so under
+# gcc/linux-x64/ (overlay_loader.c's OVERLAY_SHARED_EXT / PSX_OVERLAY_ARCH_ABI,
+# matched by compile_overlays.cache_arch_abi), and only THIS build's codegen
+# tag is shippable -- the loader ignores foreign tag namespaces.
+cache_src=${OVERLAY_CACHE_DIR:-"$root/build-linux-cache/cache"}/$game_id
+if [ -d "$cache_src" ]; then
+    shards=$(find "$cache_src" -path "*/$cg_tag/*" \( -name '*.so' -o -name '*.ranges' -o -name '*.resident' \) 2>/dev/null | wc -l)
+    if [ "$shards" -eq 0 ]; then
+        echo "Overlay cache at $cache_src holds no shards for this build's tag $cg_tag." >&2
+        echo "Rebuild it with compile_overlays.py against this runtime, or pass --allow-no-cache." >&2
+        [ "$allow_no_cache" = "1" ] || exit 1
+    else
+        mkdir -p "$payload/cache/$game_id"
+        ( cd "$cache_src" && find . -path "*/$cg_tag/*" -type f \
+            \( -name '*.so' -o -name '*.ranges' -o -name '*.resident' \) \
+            -exec cp --parents {} "$payload/cache/$game_id/" \; )
+        so_count=$(find "$payload/cache" -name '*.so' | wc -l)
+        echo "Bundled overlay cache: $so_count native overlay .so"
+    fi
+elif [ "$allow_no_cache" = "1" ]; then
+    echo "No overlay cache at $cache_src - shipping without one (--allow-no-cache)" >&2
+else
+    cat >&2 <<EOF
+No overlay cache found at $cache_src, so this AppImage would ship without one
+and every player's first session would run overlays interpreted.
+
+Build one for this release's tag ($cg_tag) with the Linux python, so the
+shards are .so under gcc/linux-x64:
+
+  PSX_OVERLAY_CACHE_DIR="$root/build-linux-cache/cache" \\
+  PSX_OVERLAY_CAPTURES="<coverage vault>/overlay_captures.json" \\
+  python3 psxrecomp-v4/tools/compile_overlays.py \\
+      --game-toml _release_game.toml \\
+      --recompiler psxrecomp-v4/recompiler/build-linux/psxrecomp-game \\
+      --runtime-include psxrecomp-v4/runtime/include --gcc \$(command -v gcc)
+
+Then re-run this script. Pass --allow-no-cache to ship without one anyway.
+EOF
+    exit 1
 fi
 
 cp "$root/packaging/release/game.toml"      "$payload/game.toml"

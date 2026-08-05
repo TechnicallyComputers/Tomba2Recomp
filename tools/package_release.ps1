@@ -299,26 +299,67 @@ if (Test-Path $CacheSrc) {
 }
 
 # ---- Self-contained overlay toolchain (tcc tier) -------------------------
-$Toolchain = Join-Path $Stage "overlay_toolchain"
-New-Item -ItemType Directory -Force $Toolchain | Out-Null
-$DlCache = Join-Path $Root "tools/_toolchain_cache"
-New-Item -ItemType Directory -Force $DlCache | Out-Null
+# The two archives below are fetched from the network. Pin them by SHA256 and
+# verify every time (including cache hits): an unverified download makes the
+# package non-reproducible and trusts whatever the mirror served that day.
+# Transient mirror failures (python.org and savannah both 502 periodically)
+# are retried rather than losing an entire release build.
+$Toolchain = New-Dir (Join-Path $Stage "overlay_toolchain")
+$DlCache = New-Dir (Join-Path $Root "tools\_toolchain_cache")
+
+function Get-PinnedArchive {
+    param(
+        [Parameter(Mandatory)][string]$Uri,
+        [Parameter(Mandatory)][string]$Sha256,
+        [Parameter(Mandatory)][string]$Destination,
+        [int]$Retries = 4
+    )
+    $name = Split-Path -Leaf $Destination
+    if (Test-Path -LiteralPath $Destination) {
+        $have = (Get-FileHash -LiteralPath $Destination -Algorithm SHA256).Hash.ToLower()
+        if ($have -eq $Sha256.ToLower()) { return $Destination }
+        Write-Warning "$name in the download cache has SHA256 $have (expected $Sha256); refetching"
+        Remove-Item -LiteralPath $Destination -Force
+    }
+    for ($attempt = 1; $attempt -le $Retries; $attempt++) {
+        try {
+            $tmp = "$Destination.tmp"
+            if (Test-Path -LiteralPath $tmp) { Remove-Item -LiteralPath $tmp -Force }
+            Invoke-WebRequest -Uri $Uri -OutFile $tmp -UseBasicParsing
+            $got = (Get-FileHash -LiteralPath $tmp -Algorithm SHA256).Hash.ToLower()
+            if ($got -ne $Sha256.ToLower()) {
+                Remove-Item -LiteralPath $tmp -Force
+                throw "SHA256 mismatch for $name : got $got, expected $Sha256"
+            }
+            Move-Item -LiteralPath $tmp -Destination $Destination -Force
+            return $Destination
+        } catch {
+            if ($attempt -eq $Retries) {
+                throw ("Failed to fetch $name after $Retries attempts: $($_.Exception.Message). " +
+                       "Place a verified copy at $Destination and re-run.")
+            }
+            $delay = [Math]::Min(30, [Math]::Pow(2, $attempt))
+            Write-Warning "$name fetch attempt $attempt failed ($($_.Exception.Message)); retrying in ${delay}s"
+            Start-Sleep -Seconds $delay
+        }
+    }
+}
 
 $PyVer = "3.13.1"
-$PyZip = Join-Path $DlCache "python-$PyVer-embed-amd64.zip"
-if (-not (Test-Path $PyZip)) {
-    Invoke-WebRequest -Uri "https://www.python.org/ftp/python/$PyVer/python-$PyVer-embed-amd64.zip" -OutFile $PyZip
-}
-Expand-Archive -Path $PyZip -DestinationPath (Join-Path $Toolchain "python") -Force
+$PyZip = Get-PinnedArchive `
+    -Uri "https://www.python.org/ftp/python/$PyVer/python-$PyVer-embed-amd64.zip" `
+    -Sha256 "7b7923ff0183a8b8fca90f6047184b419b108cb437f75fc1c002f9d2f8bcec16" `
+    -Destination (Join-Path $DlCache "python-$PyVer-embed-amd64.zip")
+Expand-Archive -LiteralPath $PyZip -DestinationPath (Join-Path $Toolchain "python") -Force
 
-$TccZip = Join-Path $DlCache "tcc-0.9.27-win64-bin.zip"
-if (-not (Test-Path $TccZip)) {
-    Invoke-WebRequest -Uri "https://download.savannah.gnu.org/releases/tinycc/tcc-0.9.27-win64-bin.zip" -OutFile $TccZip
-}
+$TccZip = Get-PinnedArchive `
+    -Uri "https://download.savannah.gnu.org/releases/tinycc/tcc-0.9.27-win64-bin.zip" `
+    -Sha256 "34a721949a2583fdff725312da092fa0f5f1f284b702e6f811c6954714faabb2" `
+    -Destination (Join-Path $DlCache "tcc-0.9.27-win64-bin.zip")
 $TccTmp = Join-Path $DlCache "tcc_extract"
-if (Test-Path $TccTmp) { Remove-Item -Recurse -Force $TccTmp }
-Expand-Archive -Path $TccZip -DestinationPath $TccTmp -Force
-Copy-Item -Recurse -Force (Join-Path $TccTmp "tcc") (Join-Path $Toolchain "tcc")
+if (Test-Path -LiteralPath $TccTmp) { Remove-Item -LiteralPath $TccTmp -Recurse -Force }
+Expand-Archive -LiteralPath $TccZip -DestinationPath $TccTmp -Force
+Copy-TreeTo (Join-Path $TccTmp "tcc") (Join-Path $Toolchain "tcc")
 
 Copy-Item (Join-Path $RecompDir "psxrecomp-game.exe") $Toolchain
 foreach ($d in @("libgcc_s_seh-1.dll","libstdc++-6.dll","libwinpthread-1.dll")) {

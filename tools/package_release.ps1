@@ -181,7 +181,7 @@ function Ensure-BiosBackends {
         # when the scriptblock runs, and bash receives the scriptblock's source
         # text instead of the command.
         $biosShellCmd = "export PATH='$posixMingw':`$PATH; cd '$posixRoot' && " +
-                        "PSXRECOMP_BIOS_BUILD=recompiler/build-t2 tools/regen_bios.sh --config $($stem[1])"
+                        "PSXRECOMP_BIOS_BUILD=recompiler/build tools/regen_bios.sh --config $($stem[1])"
         Invoke-Native { & $bash -c $biosShellCmd } "regen_bios ($($stem[0]))"
     }
 }

@@ -24,6 +24,14 @@ memcard_dir = "saves"
 # boot, logos included.
 fast_boot = true
 
+# Loading speed is owned by the Mods page ("Fast Loading (host pacing)" and
+# "CD Speed"), both shipped disabled. The legacy generic Turbo loads switch is
+# therefore off and not offered: this also makes the runtime ignore a stale
+# `turbo_loads = true` carried over in an older build's settings.toml, which the
+# launcher no longer draws a row for and so could not be turned back off.
+turbo_loads = false
+offer_turbo_loads = false
+
 # Overlay cache: keeps converted native code for game areas in the cache
 # folder, and records newly visited areas into overlay_captures.json so your
 # own cache grows as you play. Keep that file private - it contains game code

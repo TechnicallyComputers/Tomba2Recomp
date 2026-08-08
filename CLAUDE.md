@@ -17,6 +17,25 @@ This project inherits, in order:
    no stubs, recompiled-BIOS-first, fix the framework/runtime/config and
    **regenerate** — never hand-edit `generated/`.
 
+## Issue tracking (Beads)
+
+Work items live in the central Beads tracker at `F:\Software\beads\issues`,
+never in a `.beads` database inside this repo. See the global rules for the
+hierarchy and label conventions.
+
+- **This game's epic:** `beads-eio.2` — *Game: Tomba! 2 - The Evil Swine
+  Return (PlayStation)*, beneath `beads-eio` (*System: PlayStation*).
+- **Framework work belongs elsewhere:** anything in `psxrecomp-v4/` or
+  `recomp-ui/` that affects more than this title goes under `beads-eio.3`
+  (*Meta: psxrecomp framework*), not under the game epic — the same rule
+  that says a class fix belongs in the framework.
+
+```powershell
+bd -C F:\Software\beads\issues list
+bd -C F:\Software\beads\issues show beads-eio.2
+bd -C F:\Software\beads\issues create "<title>" --parent beads-eio.2 --type bug
+```
+
 ## Project rules
 
 - Game binaries (disc image, extracted boot EXE, the headerless Ghidra dump),

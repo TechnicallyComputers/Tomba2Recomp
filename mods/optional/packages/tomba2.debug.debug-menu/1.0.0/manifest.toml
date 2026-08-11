@@ -1,0 +1,23 @@
+format_version = 5
+id = "tomba2.debug.debug-menu"
+version = "1.0.0"
+name = "Tomba 2 Debug Menu"
+author = "mstan"
+description = "Adds an in-game developer menu — free positioning, area warps, event-flag inspection, freeze and speed toggles, inventory grants, and live world/actor readouts — drawn with Tomba 2's own text routines."
+resolver = "declarative"
+save_compatibility = "shared"
+
+[[target]]
+game_id = "SCUS-94454"
+disc_sha256 = "8e9568388155787384c3166a5934a495fbff3fa57154ab0489b0f214fe05a8ab"
+
+[[feature]]
+id = "debug-menu"
+name = "Debug Menu (Experimental)"
+description = "Press L3 during gameplay to open a developer menu. It can move Tomba out of bounds, force area transitions, and grant items, so it can produce save data the stock game would never write — keep a separate save."
+group = "Debug"
+default_enabled = false
+
+[[plugin]]
+feature = "debug-menu"
+id = "tomba2.debug.menu"

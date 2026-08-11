@@ -23,9 +23,12 @@ void no_op_plugin() {}
 }  // namespace
 
 int main(int argc, char** argv) {
-    if (argc != 2) return fail("expected the preloaded mods root");
+    if (argc != 2 && argc != 3)
+        return fail("expected the preloaded mods root [+ the optional root]");
 
     const fs::path source(argv[1]);
+    /* The unstaged ("hidden") catalog, checked at the end of this test. */
+    const fs::path optional_source = (argc == 3) ? fs::path(argv[2]) : fs::path();
     const fs::path root =
         fs::temp_directory_path() / "tomba2-preloaded-mods-test";
     std::error_code ec;
@@ -61,7 +64,8 @@ int main(int argc, char** argv) {
              "tomba2.framerate.144",
              "tomba2.framerate.165",
              "tomba2.framerate.240",
-             "tomba2.fmv.skip"}) {
+             "tomba2.fmv.skip",
+             "tomba2.debug.menu"}) {
         if (!PSXRecompV4::mod_register_activation_plugin(id, no_op_plugin)) {
             return fail(std::string("could not register test plugin ") + id);
         }
@@ -151,5 +155,48 @@ int main(int argc, char** argv) {
                  "3 widescreen choices, 7 interpolated frame-rate choices, "
                  "motion-adaptive clarity blend, game-owned FMV skipping, "
                  "stock guest code untouched\n";
+
+    /*
+     * Hidden catalog. The debug menu is deliberately NOT staged beside the
+     * runtime, so it never appears on the Mods page and cannot be enabled by
+     * accident. Its manifest still has to stay valid and still has to resolve
+     * to exactly one trusted plugin and zero guest writes, or the day it is
+     * un-hidden it breaks. Covering it here is the only thing keeping a
+     * catalog nobody loads from rotting.
+     */
+    if (optional_source.empty()) {
+        std::cout << "Tomba 2 hidden mods: no optional root supplied\n";
+        return 0;
+    }
+    const fs::path hidden_root =
+        fs::temp_directory_path() / "tomba2-hidden-mods-test";
+    fs::remove_all(hidden_root, ec);
+    fs::copy(optional_source, hidden_root, fs::copy_options::recursive);
+
+    PSXRecompV4::ModPackageManager hidden(hidden_root);
+    if (!hidden.scan(&error)) return fail("hidden catalog scan failed: " + error);
+    if (!hidden.load_state(&error)) {
+        return fail("hidden default state failed: " + error);
+    }
+    if (hidden.packages().size() != 1) {
+        return fail("expected exactly one hidden package");
+    }
+    if (!hidden.resolve(kGameId, "", kDiscSha256).plugins.empty()) {
+        return fail("hidden debug menu is not disabled by default");
+    }
+    if (!hidden.set_feature_enabled(
+            "tomba2.debug.debug-menu", "debug-menu", true, &error)) {
+        return fail(error);
+    }
+    const auto debug_plan = hidden.resolve(kGameId, "", kDiscSha256);
+    if (!debug_plan.ok || !debug_plan.writes.empty() ||
+        debug_plan.plugins.size() != 1 ||
+        debug_plan.plugins.front().id != "tomba2.debug.menu") {
+        return fail("Debug Menu did not resolve its trusted plugin alone");
+    }
+
+    fs::remove_all(hidden_root, ec);
+    std::cout << "Tomba 2 hidden mods: 1 unstaged package, "
+                 "debug menu default-off, one trusted plugin, no guest writes\n";
     return 0;
 }

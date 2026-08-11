@@ -6,6 +6,12 @@
 /*
  * Tomba 2 developer debug menu.
  *
+ * The menu was written by Discord user unicorngoulash, on behalf of the Tomba
+ * Club community, and released as a Tomba! 2 (SCUS-94454) code list. This file
+ * is only the installer: the payload is carried verbatim in
+ * mods/sources/tomba2_debug_menu.cht and transcribed by
+ * tools/gen_debug_menu_payload.py. Credit for the menu belongs to them.
+ *
  * The menu is guest MIPS code: ~6.7 KB of R3000A instructions plus a string
  * table, installed into free kernel RAM at 0x8000C000, reached by five guarded
  * detour words inside the game's runtime-loaded gameplay overlay. It renders

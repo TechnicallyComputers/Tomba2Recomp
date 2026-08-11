@@ -51,8 +51,25 @@ SCPH-1080 digital controller has no L3 button; the runtime still delivers the
 L3 bit, so the binding works here but does not correspond to anything you could
 press on original hardware.
 
-Provenance
-----------
-The payload is the community "Debug Menu (Press L3 to toggle)" code list for
-Tomba! 2 (NTSC-U, SCUS-94454), transcribed from
-mods/sources/tomba2_debug_menu.cht by tools/gen_debug_menu_payload.py.
+Credits
+-------
+The debug menu itself -- the MIPS payload, its pages, and its string table -- was
+written by Discord user unicorngoulash, on behalf of the Tomba Club community,
+and distributed as the "Debug Menu (Press L3 to toggle)" code list for Tomba! 2
+(NTSC-U, SCUS-94454). It is their work; this repository only carries it.
+
+The psxrecomp side is the wrapper: mods/sources/tomba2_debug_menu.cht holds the
+code list verbatim, tools/gen_debug_menu_payload.py transcribes it into a C
+header, and src/mods/tomba2_debug_menu_plugin.c installs it through the trusted
+mod API with expected-value guards. Two adaptations were needed because the
+original targets DuckStation with a retail BIOS:
+
+  * The code list's own guard reads a game pointer out of BIOS kernel RAM at
+    0x8000B080. That address is retail-SCPH1001 kernel layout; under the
+    OpenBIOS kernel this runtime ships, the same pointer lives at 0x80008558 and
+    0x8000B080 stays zero, so the original guard never fires. Replaced with a
+    signature over the routines the payload calls.
+  * FREE POSITION reads analog stick bytes that Tomba 2's digital-pinned pad
+    never receives. Unresolved -- see the warning above.
+
+Neither adaptation changes the menu; both exist so it can run here at all.

@@ -1,4 +1,18 @@
 #Debug Menu "Press L3 to toggle"
+#
+# Author: Discord user unicorngoulash, on behalf of the Tomba Club community.
+# Target: Tomba! 2 - The Evil Swine Return (USA), SCUS-94454.
+# Format: GameShark code list with DuckStation extension opcodes
+#         (0x90 ExtConstantWrite32, 0xA4 ExtSkipIfNotEqual32).
+#
+# Kept VERBATIM. This file is the authoritative source for the payload compiled
+# into src/mods/tomba2_debug_menu_payload.h by tools/gen_debug_menu_payload.py;
+# do not "fix" anything here. The two adaptations psxrecomp needs (the kernel-RAM
+# guard address and the analog-stick source) live in the plugin, not in this list,
+# precisely so this stays a faithful copy of the author's work.
+#
+# NOTE: the first comment line above is parsed as the payload title by the
+# generator. Keep it first.
 A400B080 800896E0
 9000C000 27BDFFE8
 9000C004 AFBF0014

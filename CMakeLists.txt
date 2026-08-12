@@ -68,15 +68,11 @@ psxrecomp_add_runtime_target(psx-runtime
 # Distinct process name (see comment above).
 set_target_properties(psx-runtime PROPERTIES OUTPUT_NAME "${_tomba2_exe_name}")
 
-# Ship Tomba 2's trusted, game-owned display enhancements beside the runtime.
-# The authentic 4:3/non-interpolated presentation remains the disabled baseline.
+# Ship Tomba 2's trusted, game-owned mods beside the runtime. The authentic
+# 4:3/non-interpolated presentation and stock guest code remain the disabled
+# baseline.
 set(TOMBA2_PRELOADED_MODS "${CMAKE_CURRENT_SOURCE_DIR}/mods/preloaded")
 
-# Unstaged ("hidden") catalog: packages whose trusted plugins are compiled in but
-# which are deliberately NOT copied beside the runtime, so they never appear on
-# the Mods page. The debug menu lives here while it is still developer-only. To
-# expose one, move its directory under mods/preloaded/packages.
-set(TOMBA2_OPTIONAL_MODS "${CMAKE_CURRENT_SOURCE_DIR}/mods/optional")
 if(EXISTS "${TOMBA2_PRELOADED_MODS}/packages")
     add_custom_command(TARGET psx-runtime POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory
@@ -100,6 +96,5 @@ if(BUILD_TESTING)
         NAME tomba2_preloaded_mods_test
         COMMAND "$<TARGET_FILE:tomba2_preloaded_mods_test>"
                 "${TOMBA2_PRELOADED_MODS}"
-                "${TOMBA2_OPTIONAL_MODS}"
     )
 endif()

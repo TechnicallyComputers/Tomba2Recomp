@@ -26,10 +26,10 @@ BIOS is required: select your legally obtained Tomba! 2 disc image in the
 launcher and press Launch. The optional BIOS row accepts the exact supported
 retail dump; clear it to return to bundled OpenBIOS.
 
-Tomba 2's widescreen, temporal-frame-blending, and Skip FMVs enhancements live
-on the launcher's **Mods** page. They are disabled by default, leaving the
-authentic 4:3/non-interpolated presentation with real-time movies as the
-baseline.
+Tomba 2's widescreen, temporal-frame-blending, Skip FMVs, and Debug Menu mods
+live on the launcher's **Mods** page. They are disabled by default, leaving the
+authentic 4:3/non-interpolated presentation with real-time movies and stock
+guest code as the baseline.
 
 ## Layout
 
@@ -78,6 +78,10 @@ trails. This is temporal blending, not motion-vector frame generation.
 **Skip FMVs** mutes and rapidly advances streamed XA/MDEC movies plus the
 silent, RAM-preloaded Whoopee Camp logo. The game still runs its normal movie
 completion and teardown path.
+
+**Debug Menu (Experimental)** opens Tomba 2's in-game developer menu with L3
+during gameplay. It can warp areas, move Tomba out of bounds, grant items, and
+edit event flags, so use a separate memory card for testing.
 
 ## License
 

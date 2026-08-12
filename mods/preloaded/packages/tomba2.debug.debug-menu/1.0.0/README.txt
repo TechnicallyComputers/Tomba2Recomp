@@ -1,15 +1,8 @@
 Tomba 2 Debug Menu
 ==================
 
-DEVELOPER-ONLY, NOT SHIPPED. This package lives under mods/optional, which the
-build does NOT copy beside the runtime, so the feature never appears on the Mods
-page and cannot be enabled by accident. The trusted plugin is still compiled into
-Tomba2Recomp; only the manifest that offers it is withheld.
-
-To use it locally, copy this package directory into the runtime's mods/packages
-folder beside the executable, then enable "Debug Menu (Experimental)" under
-Debug on the Mods page. To expose it for real, move the directory to
-mods/preloaded/packages and add its plugin id to the catalog test's expectations.
+This package is copied beside the runtime and appears on the launcher's Mods
+page. Enable "Debug Menu (Experimental)" under Debug on the Mods page.
 
 An in-game developer menu drawn with Tomba 2's own text routines. Press L3
 during gameplay to open it; X selects, O goes back, Up/Down move the cursor,
@@ -41,7 +34,8 @@ guest memory is touched and the game runs stock.
 
 Warnings
 --------
-This is a development tool, not a gameplay enhancement. Warping to a raw
+This is a development tool, not a gameplay enhancement. It is disabled by
+default. Warping to a raw
 destination, freeing the player position, and granting items can all put the
 game into states the stock title never reaches, and those states can be saved.
 Use a memory card you do not mind losing.

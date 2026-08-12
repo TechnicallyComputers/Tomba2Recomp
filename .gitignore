@@ -71,3 +71,8 @@ __pycache__/
 /release-stage/
 *.zip
 /tools/_toolchain_cache/
+
+# --- PSXRecomp setup-host (project studio) ---
+/disc/
+/bios/
+/dist/

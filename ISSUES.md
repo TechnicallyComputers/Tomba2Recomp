@@ -76,11 +76,11 @@ baseline.
 5. Query the always-on measurements:
 
    ```powershell
-   python ..\psxrecomp-v4\tools\raw_tcp.py 4615 frame_perf
-   python ..\psxrecomp-v4\tools\raw_tcp.py 4615 latency window=240
-   python ..\psxrecomp-v4\tools\raw_tcp.py 4615 overlay_loader_status
-   python ..\psxrecomp-v4\tools\raw_tcp.py 4615 dispatch_stats
-   python ..\psxrecomp-v4\tools\raw_tcp.py 4615 fmv_state
+   python ..\psxrecomp\tools\raw_tcp.py 4615 frame_perf
+   python ..\psxrecomp\tools\raw_tcp.py 4615 latency window=240
+   python ..\psxrecomp\tools\raw_tcp.py 4615 overlay_loader_status
+   python ..\psxrecomp\tools\raw_tcp.py 4615 dispatch_stats
+   python ..\psxrecomp\tools\raw_tcp.py 4615 fmv_state
    ```
 
 The first Beach Town attract demo starts without controller input. FMV skipping

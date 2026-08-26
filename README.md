@@ -38,7 +38,7 @@ guest code as the baseline.
 - `ghidra/` — headerless dump + import notes (`instructions.txt`).
 - `seeds/` — function-start seeds for the recompiler.
 - `generated/` — recompiler output C (regenerated locally, gitignored).
-- `psxrecomp-v4` — junction to a psxrecomp worktree (the shared framework).
+- `psxrecomp/` — the shared framework, vendored as a git submodule.
 - `game.toml` — game identity, recompiler + runtime config.
 
 ## Build

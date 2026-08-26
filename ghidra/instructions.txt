@@ -53,7 +53,7 @@ There are two targets. For almost all work you want the SECOND one.
     capture set, so it contains the overlay code as it actually appeared
     in RAM. Regenerate it with:
 
-      python psxrecomp-v4/tools/overlay_xref.py \
+      python psxrecomp/tools/overlay_xref.py \
           -d build-adaptive-uncull-probe/overlay_captures.json.d \
           ramimage ghidra/tomba2_ram.bin \
           --manifest ghidra/tomba2_ram_conflicts.txt
@@ -78,15 +78,15 @@ There are two targets. For almost all work you want the SECOND one.
     Before you act on any instruction, confirm it against the real
     per-overlay variants:
 
-      python psxrecomp-v4/tools/overlay_xref.py -d <captures.json.d> word 0x80069B84
-      python psxrecomp-v4/tools/overlay_xref.py -d <captures.json.d> dis  0x80069B6C -n 40
+      python psxrecomp/tools/overlay_xref.py -d <captures.json.d> word 0x80069B84
+      python psxrecomp/tools/overlay_xref.py -d <captures.json.d> dis  0x80069B6C -n 40
 
     Ghidra's decompiler will also invent addressing. It renders the
     actor code's player access as a global DAT_800e7f5c when the real
     instruction is `lw $v0,220($s0)` (player = <context>+0xDC); there is
     exactly ONE true reference to 0x800E7F5C in the whole capture set.
 
-    Full rationale: psxrecomp-v4/docs/OVERLAY_XREF.md
+    Full rationale: psxrecomp/docs/OVERLAY_XREF.md
 
 ----------------------------------------------------------------
 Load / memory layout (read from the PS-EXE header)

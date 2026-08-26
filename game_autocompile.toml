@@ -26,7 +26,7 @@ fast_boot = true
 # turbo_loads / offer_turbo_loads keys were retired framework-side -- the
 # runtime now ignores them and warns on sight -- so they are gone from here.
 # Tomba2's OWN debug port — 4500 collides with the SNES mmx_cosim processes.
-# Taken elsewhere: 4370/4380 psxrecomp-v4, 4470 Tomba1, 4510 Tsumu, 4520 MMX5.
+# Taken elsewhere: 4370/4380 psxrecomp, 4470 Tomba1, 4510 Tsumu, 4520 MMX5.
 debug_port = 4515
 window_title = "Tomba! 2 Recompiled"
 controller = "digital"
@@ -69,7 +69,11 @@ overlay_native_block = [
 # project root), so the shipped config is portable across machines. The
 # recompiler exe + runtime-include are resolved to absolute by compile_overlays.py
 # itself (a relative Windows exe path isn't resolved against the child cwd).
-overlay_autocompile_cmd = "C:/Users/Matthew/AppData/Local/Programs/Python/Python312/python.exe psxrecomp-v4/tools/compile_overlays.py --game-toml game.toml --recompiler F:/Projects/psxrecomp/psxrecomp/recompiler/build/psxrecomp-game.exe --runtime-include psxrecomp-v4/runtime/include"
+# BROKEN ON THIS HOST: the two absolute paths below (the Windows Python
+# interpreter and the F:/ recompiler binary) do not exist here. The framework
+# directory name was corrected to psxrecomp/, but this command still needs its
+# interpreter and --recompiler repointed before it can run.
+overlay_autocompile_cmd = "C:/Users/Matthew/AppData/Local/Programs/Python/Python312/python.exe psxrecomp/tools/compile_overlays.py --game-toml game.toml --recompiler F:/Projects/psxrecomp/psxrecomp/recompiler/build/psxrecomp-game.exe --runtime-include psxrecomp/runtime/include"
 
 # Tomba 2 is a d-pad platformer. Real PS1 hardware powers a DualShock up in
 # DIGITAL mode (analog LED off, controller id 0x41) and Tomba 2's pad driver

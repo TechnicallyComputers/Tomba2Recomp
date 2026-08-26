@@ -137,7 +137,7 @@ function Invoke-Native {
 
 # ---- BIOS backends --------------------------------------------------------
 # The runtime refuses to configure without at least one recompiled BIOS in
-# psxrecomp-v4/generated (the require-generated guard). A clean checkout has
+# psxrecomp/generated (the require-generated guard). A clean checkout has
 # none, so a "clone and run the packager" path fails at cmake with a message
 # about a script the packager could simply have run. Generate the bundled
 # OpenBIOS (MIT, no dump needed) and, when a retail dump is present, SCPH1001.
@@ -163,7 +163,7 @@ function Ensure-BiosBackends {
     }
     if (-not $bash) {
         throw ("Missing recompiled BIOS backend(s): {0}. Install MSYS2 or run " +
-               "psxrecomp-v4/tools/regen_bios.sh manually." -f (($missing | ForEach-Object { $_[0] }) -join ', '))
+               "psxrecomp/tools/regen_bios.sh manually." -f (($missing | ForEach-Object { $_[0] }) -join ', '))
     }
     # MSYS bash needs a POSIX path; cygpath is the supported converter and
     # handles drive letters and spaces that a naive string replace would not.
@@ -186,11 +186,11 @@ function Ensure-BiosBackends {
     }
 }
 
-# Framework via THIS repo's junction (psxrecomp-v4), so the release always
+# Framework via THIS repo's junction (psxrecomp), so the release always
 # builds against the pinned framework tree, never a sibling checkout.
-$RecompDir = Resolve-Path (Join-Path $Root "psxrecomp-v4\recompiler\build-t2")
+$RecompDir = Resolve-Path (Join-Path $Root "psxrecomp\recompiler\build-t2")
 Invoke-Native { cmake --build $RecompDir --target psxrecomp-game -j $Jobs } "recompiler build"
-Ensure-BiosBackends -FrameworkRoot (Join-Path $Root "psxrecomp-v4")
+Ensure-BiosBackends -FrameworkRoot (Join-Path $Root "psxrecomp")
 if ($SkipRegen) {
     Write-Host "SkipRegen: shipping checked-in generated/ code (validated bits) without regeneration"
 } else {
@@ -269,8 +269,8 @@ Copy-FileTo (Join-Path $PackagingRelease "game.toml") (Join-Path $Stage "game.to
 
 # Prebuilt overlay cache: DLLs, range manifests, and exact-hash BIOS-resident
 # sidecars; only THIS build's codegen tag.
-$RecompTools = Resolve-Path (Join-Path $Root "psxrecomp-v4\tools")
-$RecompInc   = Resolve-Path (Join-Path $Root "psxrecomp-v4\runtime\include")
+$RecompTools = Resolve-Path (Join-Path $Root "psxrecomp\tools")
+$RecompInc   = Resolve-Path (Join-Path $Root "psxrecomp\runtime\include")
 $tagScript = Join-Path $env:TEMP ("psx_cgtag_{0}.py" -f $PID)
 @"
 import importlib.util
@@ -325,10 +325,10 @@ game.toml lands under a different tag and will not be picked up:
 
   `$env:PSX_OVERLAY_CACHE_DIR = "$Root\$CacheBuildDir\cache"
   `$env:PSX_OVERLAY_CAPTURES  = "<coverage vault>\overlay_captures.json"
-  python psxrecomp-v4\tools\compile_overlays.py ``
+  python psxrecomp\tools\compile_overlays.py ``
       --game-toml packaging\release\game.toml ``
-      --recompiler psxrecomp-v4\recompiler\build-t2\psxrecomp-game.exe ``
-      --runtime-include psxrecomp-v4\runtime\include ``
+      --recompiler psxrecomp\recompiler\build-t2\psxrecomp-game.exe ``
+      --runtime-include psxrecomp\runtime\include ``
       --gcc C:\msys64\mingw64\bin\gcc.exe
 
 Then re-run this packager. Pass -AllowNoCache to ship without one anyway.
@@ -453,7 +453,7 @@ Write-Host "Verified bundled OpenBIOS; no retail BIOS/disc/save/sidecar files"
 Copy-FileTo (Join-Path $PackagingRelease "input.ini") (Join-Path $Stage "input.ini")
 
 $TombaSha = (& git -C $Root rev-parse --short HEAD).Trim()
-$PsxRecompSha = (& git -C (Join-Path $Root "psxrecomp-v4") rev-parse --short HEAD).Trim()
+$PsxRecompSha = (& git -C (Join-Path $Root "psxrecomp") rev-parse --short HEAD).Trim()
 
 @"
 Tomba2Recomp $Version

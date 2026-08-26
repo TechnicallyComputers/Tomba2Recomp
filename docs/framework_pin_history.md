@@ -3,11 +3,11 @@
 The `psxrecomp` framework used to be pinned via this hand-maintained
 `psxrecomp-v4.pin` file. That mechanism has been **replaced by a real git
 submodule**: the framework commit this repo builds against is now recorded as
-the `psxrecomp-v4` submodule pointer (see `.gitmodules`). Bump it the normal
+the `psxrecomp` submodule pointer (see `.gitmodules`). Bump it the normal
 way:
 
-    git -C psxrecomp-v4 fetch && git -C psxrecomp-v4 checkout <new-sha>
-    git add psxrecomp-v4 && git commit -m "bump psxrecomp-v4 to <new-sha>"
+    git -C psxrecomp fetch && git -C psxrecomp checkout <new-sha>
+    git add psxrecomp && git commit -m "bump psxrecomp to <new-sha>"
 
 At migration time the pointer moved to master `d2006e0`, superseding the pin
 recorded below.

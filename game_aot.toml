@@ -26,7 +26,7 @@ fast_boot = true
 # turbo_loads / offer_turbo_loads keys were retired framework-side -- the
 # runtime now ignores them and warns on sight -- so they are gone from here.
 # Tomba2's OWN debug port — 4500 collides with the SNES mmx_cosim processes.
-# Taken elsewhere: 4370/4380 psxrecomp-v4, 4470 Tomba1, 4510 Tsumu, 4520 MMX5.
+# Taken elsewhere: 4370/4380 psxrecomp, 4470 Tomba1, 4510 Tsumu, 4520 MMX5.
 debug_port = 4515
 window_title = "Tomba! 2 Recompiled"
 controller = "digital"

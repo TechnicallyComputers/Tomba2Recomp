@@ -22,12 +22,9 @@ strict = true
 # is the HLE validation title.
 fast_boot = true
 # Loading speed is mod-owned for this title ("Fast Loading (host pacing)" and
-# "CD Speed" on the Mods page, both default-off). Keep the legacy generic Turbo
-# loads switch off AND unoffered so the runtime clears a stale
-# `turbo_loads = true` from an older build's settings.toml -- the launcher draws
-# no turbo row any more, so a carried-over value was unreachable from the UI.
-turbo_loads = false
-offer_turbo_loads = false
+# "CD Speed" on the Mods page, both default-off). The legacy generic
+# turbo_loads / offer_turbo_loads keys were retired framework-side -- the
+# runtime now ignores them and warns on sight -- so they are gone from here.
 # Tomba2's OWN debug port — 4500 collides with the SNES mmx_cosim processes.
 # Taken elsewhere: 4370/4380 psxrecomp-v4, 4470 Tomba1, 4510 Tsumu, 4520 MMX5.
 debug_port = 4515
